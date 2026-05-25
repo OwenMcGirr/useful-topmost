@@ -85,7 +85,6 @@ export default function Tile(props: Props) {
       )}
 
       {props.state.kind === 'live' && (
-        // @ts-expect-error <webview> is an Electron-only HTML element
         <webview
           ref={wvRef}
           src={props.htmlUrl}
