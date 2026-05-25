@@ -24,8 +24,13 @@ export async function runCodex(opts: CodexRunOptions): Promise<CodexRunResult> {
   const outputPath = path.join(cwd, 'index.html');
 
   return new Promise<CodexRunResult>((resolve) => {
-    const args = ['exec', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-C', cwd, prompt];
-    const child: ChildProcess = spawnFn('codex', args, { cwd });
+    // Read prompt from stdin (the trailing '-') so user-supplied text never
+    // touches cmd.exe metacharacter expansion when shell: true is on.
+    const args = ['exec', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-'];
+    // shell: true lets Windows find codex.cmd (npm-global shims aren't .exe).
+    // It's a no-op on POSIX beyond going through /bin/sh.
+    const child: ChildProcess = spawnFn('codex', args, { cwd, shell: true });
+    child.stdin?.end(prompt);
     let stderrBuf = '';
     let settled = false;
 

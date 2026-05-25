@@ -9,7 +9,8 @@ let mainWindow: BrowserWindow | null = null;
 
 function checkCodexAvailable(): Promise<boolean> {
   return new Promise((resolve) => {
-    const child = spawn('codex', ['--version']);
+    // shell: true so Windows finds the npm-global codex.cmd shim.
+    const child = spawn('codex', ['--version'], { shell: true });
     child.on('error', () => resolve(false));
     child.on('exit', (code) => resolve(code === 0));
   });

@@ -9,6 +9,7 @@ function fakeChild() {
   const ee: any = new EventEmitter();
   ee.stderr = new EventEmitter();
   ee.stdout = new EventEmitter();
+  ee.stdin = { end: vi.fn() };
   ee.kill = vi.fn();
   return ee;
 }
@@ -96,5 +97,24 @@ describe('runCodex', () => {
 
     const log = await fs.readFile(logPath, 'utf8');
     expect(log).toContain('hello log');
+  });
+
+  it('writes the prompt to stdin (not argv) so cmd.exe never sees user text', async () => {
+    const cwd = await tempDir();
+    const child = fakeChild();
+    const spawnFn = vi.fn(() => {
+      queueMicrotask(async () => {
+        await fs.writeFile(path.join(cwd, 'index.html'), '<html></html>');
+        child.emit('exit', 0);
+      });
+      return child;
+    });
+
+    await runCodex({ prompt: 'PROMPT_TEXT', cwd, spawnFn: spawnFn as any, timeoutMs: 1000 });
+
+    expect(child.stdin.end).toHaveBeenCalledWith('PROMPT_TEXT');
+    const [, args] = spawnFn.mock.calls[0] as unknown as [string, string[]];
+    expect(args).not.toContain('PROMPT_TEXT');
+    expect(args).toContain('-');
   });
 });
