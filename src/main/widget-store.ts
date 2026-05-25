@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 
 export interface WidgetMeta {
   prompt: string;
@@ -59,7 +59,7 @@ export function createWidgetStore(root: string): WidgetStore {
     logPath: (uuid) => path.join(widgetsRoot, uuid, 'codex.log'),
 
     async create(prompt) {
-      const uuid = uuidv4();
+      const uuid = randomUUID();
       const dir = path.join(widgetsRoot, uuid);
       await fs.mkdir(dir, { recursive: true });
       const meta: WidgetMeta = { prompt, created_at: new Date().toISOString() };
