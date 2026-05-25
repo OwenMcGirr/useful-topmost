@@ -45,6 +45,9 @@ export async function runCodex(opts: CodexRunOptions): Promise<CodexRunResult> {
     }, timeoutMs);
 
     child.stderr?.on('data', (chunk: Buffer) => { stderrBuf += chunk.toString(); });
+    // Drain stdout: if we leave it unread the pipe (~64KB on Windows) fills up
+    // and Codex blocks on write, which manifests as a spurious timeout.
+    child.stdout?.on('data', () => {});
     child.on('error', (err: Error) => { finish({ ok: false, error: err.message }); });
 
     child.on('exit', async (code) => {
