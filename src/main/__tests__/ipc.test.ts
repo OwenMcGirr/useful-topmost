@@ -268,4 +268,20 @@ describe('ipc', () => {
     expect(callArg.prompt).not.toContain('SECRET');
     expect(callArg.prompt).toMatch(/The user's request:\s*show weather$/);
   });
+
+  it('app:widgetPreloadUrl returns a file:// URL to the bundled widget preload', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    registerIpc(ipc as any, store, secrets, runCodex as any, () => sender as any);
+
+    const url = await ipc.invoke('app:widgetPreloadUrl');
+    expect(typeof url).toBe('string');
+    expect(url.startsWith('file://')).toBe(true);
+    expect(url.endsWith('/widget.js')).toBe(true);
+  });
 });

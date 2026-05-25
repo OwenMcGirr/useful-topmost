@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { IpcMain, WebContents } from 'electron';
 import type { WidgetStore } from './widget-store';
 import type { SecretsStore, Provider } from './secrets-store';
@@ -100,4 +101,9 @@ export function registerIpc(
 
   ipcMain.handle('app:fetch', async (_event, url: string, init?: RequestInit) =>
     appFetch(secrets, url, init));
+
+  ipcMain.handle('app:widgetPreloadUrl', async () => {
+    const widgetPreload = path.join(__dirname, '../preload/widget.js');
+    return `file://${widgetPreload.replace(/\\/g, '/')}`;
+  });
 }
