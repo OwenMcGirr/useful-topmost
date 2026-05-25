@@ -1,7 +1,7 @@
 {
   "name": "useful-topmost",
-  "version": "1.0.0",
-  "description": "",
+  "version": "0.1.0",
+  "description": "Frameless full-screen Electron dashboard whose widgets are generated on the fly by the OpenAI Codex CLI.",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -9,9 +9,15 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "electron",
+    "codex",
+    "dashboard",
+    "ai",
+    "widgets"
+  ],
+  "author": "Owen McGirr",
+  "license": "MIT",
   "type": "commonjs",
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",

@@ -1,5 +1,24 @@
+# Dependencies and build output
 node_modules
 dist
 out
 .vite
+
+# Logs and coverage
 *.log
+coverage
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
