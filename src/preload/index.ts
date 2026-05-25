@@ -1,11 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
+import type { PublicProvider, Provider } from '../main/secrets-store';
 
 export interface Widget {
   uuid: string;
   prompt: string;
   created_at: string;
 }
+
+interface SaveResult { ok: boolean; error?: string }
 
 const api = {
   createWidget: (prompt: string) => ipcRenderer.invoke('widget:create', prompt) as Promise<{ uuid: string }>,
@@ -14,6 +17,7 @@ const api = {
   getWidgetMeta: (uuid: string) => ipcRenderer.invoke('widget:getMeta', uuid) as Promise<{ prompt: string; created_at: string }>,
   htmlUrl: (uuid: string) => ipcRenderer.invoke('widget:htmlUrl', uuid) as Promise<string>,
   codexAvailable: () => ipcRenderer.invoke('app:codexAvailable') as Promise<boolean>,
+  widgetPreloadUrl: () => ipcRenderer.invoke('app:widgetPreloadUrl') as Promise<string>,
   onWidgetReady: (cb: (uuid: string) => void) => {
     const handler = (_e: IpcRendererEvent, payload: { uuid: string }) => cb(payload.uuid);
     ipcRenderer.on('widget:ready', handler);
@@ -23,6 +27,12 @@ const api = {
     const handler = (_e: IpcRendererEvent, payload: { uuid: string; error: string }) => cb(payload.uuid, payload.error);
     ipcRenderer.on('widget:error', handler);
     return () => ipcRenderer.removeListener('widget:error', handler);
+  },
+  secrets: {
+    list: () => ipcRenderer.invoke('secrets:list') as Promise<PublicProvider[]>,
+    save: (p: Provider | (Omit<Provider, 'value'> & { value?: string })) =>
+      ipcRenderer.invoke('secrets:save', p) as Promise<SaveResult>,
+    delete: (id: string) => ipcRenderer.invoke('secrets:delete', id) as Promise<{ ok: true }>
   }
 };
 
