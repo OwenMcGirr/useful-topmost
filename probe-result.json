@@ -1,7 +1,0 @@
-{
-  "type_of_electron": "string",
-  "process_electron_ver": "33.4.11",
-  "keys": "(not object)",
-  "has_app": false,
-  "has_BrowserWindow": false
-}
