@@ -1,10 +1,25 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
+import { spawn } from 'node:child_process';
 import { join } from 'node:path';
+import { createWidgetStore } from './widget-store';
+import { runCodex } from './codex-runner';
+import { registerIpc } from './ipc';
+
+let mainWindow: BrowserWindow | null = null;
+
+function checkCodexAvailable(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn('codex', ['--version']);
+    child.on('error', () => resolve(false));
+    child.on('exit', (code) => resolve(code === 0));
+  });
+}
 
 function createWindow() {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     fullscreen: true,
     frame: false,
+    backgroundColor: '#0d1117',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -13,11 +28,19 @@ function createWindow() {
     }
   });
   if (process.env.ELECTRON_RENDERER_URL) {
-    win.loadURL(process.env.ELECTRON_RENDERER_URL);
+    mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'));
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
   }
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(async () => {
+  const store = createWidgetStore(app.getPath('userData'));
+  registerIpc(ipcMain, store, runCodex, () => mainWindow!.webContents);
+
+  ipcMain.handle('app:codexAvailable', () => checkCodexAvailable());
+
+  createWindow();
+});
+
 app.on('window-all-closed', () => app.quit());

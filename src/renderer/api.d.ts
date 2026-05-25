@@ -1,7 +1,9 @@
+import type { Api } from '../preload';
+
 export {};
 
 declare global {
   interface Window {
-    api: Record<string, never>;
+    api: Api;
   }
 }
