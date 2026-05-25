@@ -19,6 +19,14 @@
   "author": "Owen McGirr",
   "license": "MIT",
   "type": "commonjs",
+  "homepage": "https://github.com/OwenMcGirr/useful-topmost#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OwenMcGirr/useful-topmost.git"
+  },
+  "bugs": {
+    "url": "https://github.com/OwenMcGirr/useful-topmost/issues"
+  },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
