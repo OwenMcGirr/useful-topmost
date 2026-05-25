@@ -13,4 +13,26 @@ describe('codex-prompt', () => {
     expect(out.startsWith(CODEX_SYSTEM_PROMPT)).toBe(true);
     expect(out.endsWith('show the weather')).toBe(true);
   });
+
+  it('buildPrompt with an empty providers array is identical to no providers', () => {
+    expect(buildPrompt('x', [])).toBe(buildPrompt('x'));
+  });
+
+  it('buildPrompt with providers inserts the providers block before the user request', () => {
+    const out = buildPrompt('show weather', [
+      { id: 'a', name: 'OpenWeather', hostnames: ['api.openweathermap.org'], auth: { type: 'query', param: 'appid' } },
+      { id: 'b', name: 'NewsAPI', hostnames: ['newsapi.org', 'www.newsapi.org'], auth: { type: 'header', name: 'X-API-Key' } }
+    ]);
+
+    expect(out).toContain('Available providers:');
+    expect(out).toContain('- OpenWeather (https://api.openweathermap.org) — call via window.appFetch');
+    expect(out).toContain('- NewsAPI (https://newsapi.org, https://www.newsapi.org) — call via window.appFetch');
+    expect(out).toContain('window.appFetch(url, init) instead of fetch(url, init)');
+    expect(out.endsWith('show weather')).toBe(true);
+
+    const providersIdx = out.indexOf('Available providers:');
+    const userReqIdx = out.indexOf("The user's request:");
+    expect(providersIdx).toBeGreaterThan(0);
+    expect(userReqIdx).toBeGreaterThan(providersIdx);
+  });
 });
