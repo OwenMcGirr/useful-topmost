@@ -20,8 +20,8 @@ describe('codex-prompt', () => {
 
   it('buildPrompt with providers inserts the providers block before the user request', () => {
     const out = buildPrompt('show weather', [
-      { id: 'a', name: 'OpenWeather', hostnames: ['api.openweathermap.org'], auth: { type: 'query', param: 'appid' } },
-      { id: 'b', name: 'NewsAPI', hostnames: ['newsapi.org', 'www.newsapi.org'], auth: { type: 'header', name: 'X-API-Key' } }
+      { name: 'OpenWeather', hostnames: ['api.openweathermap.org'] },
+      { name: 'NewsAPI', hostnames: ['newsapi.org', 'www.newsapi.org'] }
     ]);
 
     expect(out).toContain('Available providers:');
