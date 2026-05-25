@@ -6,6 +6,7 @@ interface Props {
   prompt: string;
   state: TileState;
   htmlUrl: string;
+  widgetPreloadUrl: string;
   onRefresh: () => void;
   onDismiss: () => void;
   onReprompt: () => void;
@@ -13,36 +14,22 @@ interface Props {
 }
 
 const TILE: React.CSSProperties = {
-  position: 'relative',
-  width: 400,
-  height: 300,
-  background: '#161b22',
-  border: '1px solid #30363d',
-  borderRadius: 6,
-  overflow: 'hidden'
+  position: 'relative', width: 400, height: 300,
+  background: '#161b22', border: '1px solid #30363d',
+  borderRadius: 6, overflow: 'hidden'
 };
 
 const CHROME: React.CSSProperties = {
-  position: 'absolute',
-  top: 0, left: 0, right: 0,
-  padding: '4px 8px',
-  display: 'flex',
-  gap: 4,
-  justifyContent: 'flex-end',
-  background: 'rgba(13,17,23,0.85)',
-  opacity: 0,
-  transition: 'opacity 120ms ease-in',
-  zIndex: 10
+  position: 'absolute', top: 0, left: 0, right: 0,
+  padding: '4px 8px', display: 'flex', gap: 4, justifyContent: 'flex-end',
+  background: 'rgba(13,17,23,0.85)', opacity: 0,
+  transition: 'opacity 120ms ease-in', zIndex: 10
 };
 
 const BTN: React.CSSProperties = {
-  background: 'transparent',
-  color: '#e6edf3',
-  border: '1px solid #30363d',
-  borderRadius: 4,
-  padding: '4px 8px',
-  fontSize: 12,
-  cursor: 'pointer'
+  background: 'transparent', color: '#e6edf3',
+  border: '1px solid #30363d', borderRadius: 4,
+  padding: '4px 8px', fontSize: 12, cursor: 'pointer'
 };
 
 export default function Tile(props: Props) {
@@ -88,6 +75,8 @@ export default function Tile(props: Props) {
         <webview
           ref={wvRef}
           src={props.htmlUrl}
+          preload={props.widgetPreloadUrl}
+          webpreferences="contextIsolation=yes, nodeIntegration=no"
           style={{ width: '100%', height: '100%', border: 0 }}
         />
       )}

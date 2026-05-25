@@ -11,6 +11,7 @@ describe('Tile', () => {
         prompt="show weather"
         state={{ kind: 'building' }}
         htmlUrl=""
+        widgetPreloadUrl=""
         onRefresh={() => {}}
         onDismiss={() => {}}
         onReprompt={() => {}}
@@ -27,6 +28,7 @@ describe('Tile', () => {
         prompt="show weather"
         state={{ kind: 'live' }}
         htmlUrl="file:///path/index.html"
+        widgetPreloadUrl=""
         onRefresh={() => {}}
         onDismiss={() => {}}
         onReprompt={() => {}}
@@ -47,6 +49,7 @@ describe('Tile', () => {
         prompt="show weather"
         state={{ kind: 'error', message: 'codex exited with code 1' }}
         htmlUrl=""
+        widgetPreloadUrl=""
         onRefresh={() => {}}
         onDismiss={onDismiss}
         onReprompt={() => {}}
@@ -70,6 +73,7 @@ describe('Tile', () => {
         prompt="show weather"
         state={{ kind: 'live' }}
         htmlUrl="file:///x"
+        widgetPreloadUrl=""
         onRefresh={onRefresh}
         onDismiss={onDismiss}
         onReprompt={onReprompt}

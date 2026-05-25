@@ -13,8 +13,14 @@ function mockApi() {
     getWidgetMeta: vi.fn(async () => ({ prompt: 'p', created_at: '' })),
     htmlUrl: vi.fn(async (u: string) => `file:///${u}/index.html`),
     codexAvailable: vi.fn(async () => true),
+    widgetPreloadUrl: vi.fn(async () => 'file:///fake/widget.js'),
     onWidgetReady: vi.fn((cb: any) => { readyHandler = cb; return () => {}; }),
-    onWidgetError: vi.fn((cb: any) => { errorHandler = cb; return () => {}; })
+    onWidgetError: vi.fn((cb: any) => { errorHandler = cb; return () => {}; }),
+    secrets: {
+      list: vi.fn(async () => []),
+      save: vi.fn(async () => ({ ok: true })),
+      delete: vi.fn(async () => ({ ok: true }))
+    }
   };
   return {
     api,
@@ -86,5 +92,15 @@ describe('Dashboard', () => {
     m.fireError('new-uuid', 'boom');
 
     expect(await screen.findByText(/boom/)).toBeInTheDocument();
+  });
+
+  it('renders a gear button that opens the SecretsModal', async () => {
+    const m = mockApi();
+    (window as any).api = m.api;
+
+    render(<Dashboard />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /settings/i }));
+    expect(await screen.findByText(/api providers/i)).toBeInTheDocument();
   });
 });
