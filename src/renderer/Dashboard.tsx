@@ -39,11 +39,14 @@ export default function Dashboard() {
   const [widgetPreload, setWidgetPreload] = useState<string>('');
 
   useEffect(() => {
-    void window.api.widgetPreloadUrl().then(setWidgetPreload);
-  }, []);
-
-  useEffect(() => {
+    // Fetch the widget preload URL BEFORE restoring tiles. Electron reads the
+    // <webview preload> attribute at navigation time, so if a tile mounts
+    // with preload="" it loads without window.appFetch — and a later attribute
+    // update won't retroactively re-inject it. Sequencing both calls in one
+    // effect guarantees widgetPreload is set before any live tile renders.
     void (async () => {
+      const url = await window.api.widgetPreloadUrl();
+      setWidgetPreload(url);
       const widgets: Widget[] = await window.api.listWidgets();
       const entries: TileEntry[] = await Promise.all(widgets.map(async (w) => ({
         uuid: w.uuid,
