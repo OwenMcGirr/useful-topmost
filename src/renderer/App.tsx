@@ -1,3 +1,15 @@
+import { useEffect, useState } from 'react';
+import Dashboard from './Dashboard';
+import SetupScreen from './SetupScreen';
+
 export default function App() {
-  return <div style={{ color: '#fff', padding: 24 }}>useful-topmost — bootstrapping…</div>;
+  const [codexAvailable, setCodexAvailable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    window.api.codexAvailable().then(setCodexAvailable);
+  }, []);
+
+  if (codexAvailable === null) return <div style={{ padding: 24 }}>Checking Codex…</div>;
+  if (!codexAvailable) return <SetupScreen />;
+  return <Dashboard />;
 }
