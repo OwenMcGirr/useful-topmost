@@ -17,7 +17,8 @@ export interface CodexRunOptions {
   spawnFn?: typeof nodeSpawn;
 }
 
-const DEFAULT_TIMEOUT_MS = 90_000;
+const DEFAULT_TIMEOUT_MS = 180_000;
+const POLL_INTERVAL_MS = 500;
 
 export async function runCodex(opts: CodexRunOptions): Promise<CodexRunResult> {
   const { prompt, cwd, timeoutMs = DEFAULT_TIMEOUT_MS, logPath, spawnFn = nodeSpawn } = opts;
@@ -38,8 +39,14 @@ export async function runCodex(opts: CodexRunOptions): Promise<CodexRunResult> {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearInterval(poller);
       if (logPath) {
         try { await fs.writeFile(logPath, stderrBuf); } catch { /* swallow */ }
+      }
+      // If we succeeded by file-watch before Codex exited, kill the lingering
+      // process so post-write transcript work doesn't keep it alive.
+      if (result.ok) {
+        try { child.kill(); } catch { /* swallow */ }
       }
       resolve(result);
     };
@@ -49,6 +56,15 @@ export async function runCodex(opts: CodexRunOptions): Promise<CodexRunResult> {
       finish({ ok: false, error: 'timeout' });
     }, timeoutMs);
 
+    // Poll for index.html — Codex often keeps doing post-write transcript
+    // work for a minute or two after the file lands, so don't wait for exit.
+    const poller = setInterval(async () => {
+      try {
+        await fs.access(outputPath);
+        finish({ ok: true, path: outputPath });
+      } catch { /* not yet */ }
+    }, POLL_INTERVAL_MS);
+
     child.stderr?.on('data', (chunk: Buffer) => { stderrBuf += chunk.toString(); });
     // Drain stdout: if we leave it unread the pipe (~64KB on Windows) fills up
     // and Codex blocks on write, which manifests as a spurious timeout.
@@ -56,6 +72,8 @@ export async function runCodex(opts: CodexRunOptions): Promise<CodexRunResult> {
     child.on('error', (err: Error) => { finish({ ok: false, error: err.message }); });
 
     child.on('exit', async (code) => {
+      // If the poller already saw the file we'd be settled — short-circuit.
+      if (settled) return;
       if (code !== 0) {
         finish({ ok: false, error: `codex exited with code ${code}: ${stderrBuf.slice(-500)}` });
         return;
