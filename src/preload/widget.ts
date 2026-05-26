@@ -6,11 +6,31 @@ interface FetchEnvelope {
   body: string;
 }
 
+// Headers, Map and tuple arrays don't survive structured-clone over IPC.
+// Normalize whatever the caller passed into a plain object the main proxy
+// can read.
+function flattenHeaders(h: RequestInit['headers']): Record<string, string> | undefined {
+  if (h == null) return undefined;
+  if (typeof Headers !== 'undefined' && h instanceof Headers) {
+    const out: Record<string, string> = {};
+    h.forEach((v, k) => { out[k] = v; });
+    return out;
+  }
+  if (Array.isArray(h)) {
+    const out: Record<string, string> = {};
+    for (const pair of h) {
+      if (Array.isArray(pair) && pair.length >= 2) out[String(pair[0])] = String(pair[1]);
+    }
+    return out;
+  }
+  return { ...(h as Record<string, string>) };
+}
+
 async function appFetch(url: string, init?: RequestInit): Promise<Response> {
-  // Strip non-serializable fields (e.g. AbortSignal, ReadableStream body).
+  // Strip non-serializable fields (AbortSignal, ReadableStream body, Headers).
   const safeInit = init ? {
     method: init.method,
-    headers: init.headers as Record<string, string> | undefined,
+    headers: flattenHeaders(init.headers),
     body: typeof init.body === 'string' ? init.body : undefined
   } : undefined;
 
