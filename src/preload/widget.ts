@@ -6,7 +6,7 @@ interface FetchEnvelope {
   body: string;
 }
 
-// Headers, Map and tuple arrays don't survive structured-clone over IPC.
+// Headers and tuple arrays don't survive structured-clone over IPC.
 // Normalize whatever the caller passed into a plain object the main proxy
 // can read.
 function flattenHeaders(h: RequestInit['headers']): Record<string, string> | undefined {
@@ -26,7 +26,70 @@ function flattenHeaders(h: RequestInit['headers']): Record<string, string> | und
   return { ...(h as Record<string, string>) };
 }
 
-async function appFetch(url: string, init?: RequestInit): Promise<Response> {
+// We can't return a real Response across contextBridge — only own properties
+// proxy through, and Response's surface (status, ok, json(), etc.) all lives
+// on the prototype. Build a plain object that quacks like Response: every
+// property an own field, every method an own function. Widgets that read
+// .ok / .status / call .json() / .text() / .headers.get() see the right
+// values.
+interface HeadersLike {
+  get(name: string): string | null;
+  has(name: string): boolean;
+  forEach(cb: (value: string, key: string) => void): void;
+}
+
+interface ResponseLike {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  url: string;
+  redirected: boolean;
+  type: 'basic';
+  headers: HeadersLike;
+  json(): Promise<unknown>;
+  text(): Promise<string>;
+  clone(): ResponseLike;
+}
+
+function makeHeadersLike(raw: Record<string, string>): HeadersLike {
+  const lower: Record<string, string> = {};
+  for (const k of Object.keys(raw)) lower[k.toLowerCase()] = raw[k];
+  return {
+    get(name: string) {
+      const v = lower[String(name).toLowerCase()];
+      return v === undefined ? null : v;
+    },
+    has(name: string) {
+      return String(name).toLowerCase() in lower;
+    },
+    forEach(cb) {
+      for (const k of Object.keys(lower)) cb(lower[k], k);
+    }
+  };
+}
+
+function makeResponseLike(env: FetchEnvelope, url: string): ResponseLike {
+  return {
+    ok: env.status >= 200 && env.status < 300,
+    status: env.status,
+    statusText: '',
+    url,
+    redirected: false,
+    type: 'basic',
+    headers: makeHeadersLike(env.headers),
+    async json() {
+      return JSON.parse(env.body);
+    },
+    async text() {
+      return env.body;
+    },
+    clone() {
+      return makeResponseLike(env, url);
+    }
+  };
+}
+
+async function appFetch(url: string, init?: RequestInit): Promise<ResponseLike> {
   // Strip non-serializable fields (AbortSignal, ReadableStream body, Headers).
   const safeInit = init ? {
     method: init.method,
@@ -38,7 +101,7 @@ async function appFetch(url: string, init?: RequestInit): Promise<Response> {
   if (env.status === 0) {
     throw new TypeError('NetworkError when attempting to fetch resource.');
   }
-  return new Response(env.body, { status: env.status, headers: env.headers });
+  return makeResponseLike(env, url);
 }
 
 contextBridge.exposeInMainWorld('appFetch', appFetch);
