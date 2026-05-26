@@ -27,6 +27,20 @@
   "bugs": {
     "url": "https://github.com/OwenMcGirr/useful-topmost/issues"
   },
+  "build": {
+    "appId": "com.owenmcgirr.useful-topmost",
+    "productName": "useful-topmost",
+    "files": [
+      "out/**/*",
+      "resources/icon.png"
+    ],
+    "directories": {
+      "buildResources": "resources"
+    },
+    "mac": { "icon": "resources/icon.png" },
+    "win": { "icon": "resources/icon.png" },
+    "linux": { "icon": "resources/icon.png" }
+  },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
