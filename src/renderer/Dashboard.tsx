@@ -2,8 +2,10 @@ import { useEffect, useState, useCallback } from 'react';
 import Tile from './Tile';
 import PromptModal from './PromptModal';
 import SecretsModal from './SecretsModal';
+import UpdatePrompt from './UpdatePrompt';
 import WelcomeOverlay from './WelcomeOverlay';
 import type { Widget, TileState } from './types';
+import type { UpdateState } from '../preload';
 
 interface TileEntry {
   uuid: string;
@@ -45,9 +47,15 @@ export default function Dashboard() {
   const [repromptInitial, setRepromptInitial] = useState('');
   const [widgetPreload, setWidgetPreload] = useState<string>('');
   const [onboardingDismissed, setOnboardingDismissed] = useState<boolean | null>(null);
+  const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' });
 
   useEffect(() => {
     void window.api.onboarding.get().then((s) => setOnboardingDismissed(s.dismissed));
+  }, []);
+
+  useEffect(() => {
+    void window.api.updates.getState().then(setUpdateState);
+    return window.api.updates.onState(setUpdateState);
   }, []);
 
   useEffect(() => {
@@ -184,7 +192,13 @@ export default function Dashboard() {
           setRepromptUuid(null);
         }}
       />
-      <SecretsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SecretsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        updateState={updateState}
+        onCheckUpdates={() => void window.api.updates.checkNow().then(setUpdateState)}
+      />
+      <UpdatePrompt state={updateState} />
       {showWelcome && (
         <WelcomeOverlay onDismiss={dismissOnboarding} onUseExample={handleUseExample} />
       )}

@@ -139,4 +139,23 @@ describe('SecretsModal', () => {
     await waitFor(() => expect(api.secrets.delete).toHaveBeenCalledWith('p1'));
     await waitFor(() => expect(state).toHaveLength(0));
   });
+
+  it('Check for updates calls the supplied update handler', async () => {
+    const { api } = mockApi([]);
+    const onCheckUpdates = vi.fn();
+    (window as any).api = api;
+    render(
+      <SecretsModal
+        open={true}
+        onClose={() => {}}
+        updateState={{ status: 'not-available' }}
+        onCheckUpdates={onCheckUpdates}
+      />
+    );
+
+    expect(await screen.findByText(/up to date/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /check for updates/i }));
+
+    expect(onCheckUpdates).toHaveBeenCalledTimes(1);
+  });
 });

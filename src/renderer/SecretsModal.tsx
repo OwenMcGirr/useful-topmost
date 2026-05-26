@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import type { PublicProvider, Provider, AuthStrategy } from '../main/secrets-store';
+import type { UpdateState } from '../preload';
 
 interface Props {
   open: boolean;
   onClose: () => void;
+  updateState?: UpdateState;
+  onCheckUpdates?: () => void;
 }
 
 interface Draft {
@@ -56,7 +59,35 @@ const ROW: React.CSSProperties = {
   padding: '8px 4px', borderBottom: '1px solid #21262d'
 };
 
-export default function SecretsModal({ open, onClose }: Props) {
+function updateStatusText(state: UpdateState): string {
+  switch (state.status) {
+    case 'checking':
+      return 'Checking';
+    case 'available':
+      return `Update ${state.version} available`;
+    case 'downloading':
+      return typeof state.percent === 'number'
+        ? `Downloading ${Math.round(state.percent)}%`
+        : 'Downloading';
+    case 'downloaded':
+      return `Update ${state.version} ready`;
+    case 'not-available':
+      return 'Up to date';
+    case 'unsupported':
+      return 'Updates unavailable for this package';
+    case 'error':
+      return 'Update check failed';
+    default:
+      return 'Idle';
+  }
+}
+
+export default function SecretsModal({
+  open,
+  onClose,
+  updateState = { status: 'idle' },
+  onCheckUpdates = () => {}
+}: Props) {
   const [providers, setProviders] = useState<PublicProvider[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string>('');
@@ -222,6 +253,15 @@ export default function SecretsModal({ open, onClose }: Props) {
             <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginTop: 16 }}>
               <button style={BTN_PRIMARY} onClick={startAdd}>Add provider</button>
               <button style={BTN} onClick={onClose}>Close</button>
+            </div>
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #21262d' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontSize: 14 }}>Updates</div>
+                  <div style={{ fontSize: 12, opacity: 0.7 }}>{updateStatusText(updateState)}</div>
+                </div>
+                <button style={BTN} onClick={onCheckUpdates}>Check for updates</button>
+              </div>
             </div>
           </div>
         )}

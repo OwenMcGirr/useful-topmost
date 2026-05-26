@@ -25,6 +25,12 @@ function mockApi(opts: { onboardingDismissed?: boolean } = {}) {
     onboarding: {
       get: vi.fn(async () => ({ dismissed: opts.onboardingDismissed ?? false })),
       dismiss: vi.fn(async () => ({ ok: true }))
+    },
+    updates: {
+      getState: vi.fn(async () => ({ status: 'idle' })),
+      checkNow: vi.fn(async () => ({ status: 'not-available' })),
+      restart: vi.fn(async () => undefined),
+      onState: vi.fn(() => () => {})
     }
   };
   return {
