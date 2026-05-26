@@ -55,7 +55,7 @@ jobs:
             artifact: windows-release
             files: |
               dist/*.exe
-              dist/*.blockmap
+              dist/*.exe.blockmap
               dist/latest.yml
           - platform: linux
             os: ubuntu-latest
@@ -64,7 +64,6 @@ jobs:
             files: |
               dist/*.AppImage
               dist/*.deb
-              dist/*.blockmap
               dist/latest-linux.yml
 
     runs-on: ${{ matrix.os }}

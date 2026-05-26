@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
 import type { PublicProvider, Provider } from '../main/secrets-store';
 import type { OnboardingState } from '../main/onboarding-store';
+import type { UpdateState } from '../main/updater';
 
 export interface CodexStatus {
   installed: boolean;
@@ -44,9 +45,20 @@ const api = {
   onboarding: {
     get: () => ipcRenderer.invoke('onboarding:get') as Promise<OnboardingState>,
     dismiss: () => ipcRenderer.invoke('onboarding:dismiss') as Promise<{ ok: true }>
+  },
+  updates: {
+    getState: () => ipcRenderer.invoke('update:getState') as Promise<UpdateState>,
+    checkNow: () => ipcRenderer.invoke('update:checkNow') as Promise<UpdateState>,
+    restart: () => ipcRenderer.invoke('update:restart') as Promise<void>,
+    onState: (cb: (state: UpdateState) => void) => {
+      const handler = (_e: IpcRendererEvent, state: UpdateState) => cb(state);
+      ipcRenderer.on('update:state', handler);
+      return () => ipcRenderer.removeListener('update:state', handler);
+    }
   }
 };
 
 contextBridge.exposeInMainWorld('api', api);
 
 export type Api = typeof api;
+export type { UpdateState };

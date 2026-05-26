@@ -6,6 +6,7 @@ import { createSecretsStore } from './secrets-store';
 import { createOnboardingStore } from './onboarding-store';
 import { runCodex } from './codex-runner';
 import { registerIpc } from './ipc';
+import { createUpdateController } from './updater';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -64,6 +65,16 @@ app.whenReady().then(async () => {
   });
 
   createWindow();
+
+  const updates = createUpdateController((state) => {
+    mainWindow?.webContents.send('update:state', state);
+  });
+
+  ipcMain.handle('update:getState', () => updates.getState());
+  ipcMain.handle('update:checkNow', () => updates.checkNow());
+  ipcMain.handle('update:restart', () => updates.quitAndInstall());
+
+  setTimeout(() => void updates.checkNow(), 5000);
 });
 
 app.on('window-all-closed', () => app.quit());
