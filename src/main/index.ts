@@ -9,6 +9,7 @@ import { registerIpc } from './ipc';
 import { createUpdateController } from './updater';
 
 let mainWindow: BrowserWindow | null = null;
+const APP_USER_MODEL_ID = 'com.owenmcgirr.useful-topmost';
 
 function runCodexCommand(args: string[]): Promise<boolean> {
   return new Promise((resolve) => {
@@ -31,12 +32,18 @@ async function checkCodexStatus(): Promise<CodexStatus> {
   return { installed: true, authenticated };
 }
 
+function appIconPath() {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'icon.png')
+    : join(__dirname, '../../resources/icon.png');
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     fullscreen: true,
     frame: false,
     backgroundColor: '#0d1117',
-    icon: join(__dirname, '../../resources/icon.png'),
+    icon: appIconPath(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -52,6 +59,10 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform === 'win32') {
+    app.setAppUserModelId(APP_USER_MODEL_ID);
+  }
+
   const userData = app.getPath('userData');
   const store = createWidgetStore(userData);
   const secrets = createSecretsStore(userData);
