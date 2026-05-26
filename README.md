@@ -95,6 +95,21 @@ userData/
 
 Restarting the app reloads every widget from disk — no Codex calls.
 
+### Authenticated APIs
+
+Click the gear icon next to the `+` button to open the providers panel.
+Add an entry — for example "OpenWeather" with hostname
+`api.openweathermap.org`, query-string auth, param `appid`, and your
+key. Codex is told the provider exists (by name + base URL) but never
+sees the secret value. Inside each widget, calls to those hostnames go
+through `window.appFetch` (a drop-in for `fetch`); a main-process
+proxy injects the auth header or query param before performing the
+upstream request. The key never enters the widget's renderer process.
+
+Provider records live at `userData/secrets.json` as plain JSON for
+now. OS-keychain encryption via Electron's `safeStorage` is a planned
+follow-up.
+
 ### Re-prompt and retry
 
 - **Refresh** (on a live tile) reloads the webview. The widget's inline

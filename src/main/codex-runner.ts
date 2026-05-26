@@ -27,7 +27,16 @@ export async function runCodex(opts: CodexRunOptions): Promise<CodexRunResult> {
   return new Promise<CodexRunResult>((resolve) => {
     // Read prompt from stdin (the trailing '-') so user-supplied text never
     // touches cmd.exe metacharacter expansion when shell: true is on.
-    const args = ['exec', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-'];
+    // browser_use + shell_tool are stable+default-on in Codex, but pass them
+    // explicitly so a config change can't silently disable them.
+    const args = [
+      'exec',
+      '--skip-git-repo-check',
+      '--dangerously-bypass-approvals-and-sandbox',
+      '--enable', 'browser_use',
+      '--enable', 'shell_tool',
+      '-'
+    ];
     // shell: true lets Windows find codex.cmd (npm-global shims aren't .exe).
     // It's a no-op on POSIX beyond going through /bin/sh.
     const child: ChildProcess = spawnFn('codex', args, { cwd, shell: true });

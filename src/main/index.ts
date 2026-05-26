@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { createWidgetStore } from './widget-store';
+import { createSecretsStore } from './secrets-store';
 import { runCodex } from './codex-runner';
 import { registerIpc } from './ipc';
 
@@ -37,7 +38,8 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   const store = createWidgetStore(app.getPath('userData'));
-  registerIpc(ipcMain, store, runCodex, () => mainWindow!.webContents);
+  const secrets = createSecretsStore(app.getPath('userData'));
+  registerIpc(ipcMain, store, secrets, runCodex, () => mainWindow!.webContents);
 
   ipcMain.handle('app:codexAvailable', () => checkCodexAvailable());
 

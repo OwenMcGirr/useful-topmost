@@ -15,9 +15,36 @@ Data:
 - Prefer keyless public APIs (Open-Meteo for weather, Wikipedia, public RSS, public GitHub endpoints, etc.).
 - Pick a sensible refresh cadence and bake it into a setInterval.
 
-The user's request:
+Looking things up:
+- If you do not already know the exact shape of an API (endpoint path, query params, response JSON, auth header name), look it up via your browser or by curl-ing the official docs before writing the widget. Do not guess.
+- For any request the widget will make, confirm the URL, method, required headers, and the response shape against the upstream's documentation. A widget that hits the wrong endpoint or reads the wrong field is worse than one that fails fast.
+- Inside the widget, use plain object headers like { "Accept": "application/json" }. Do not use \`new Headers()\` — Headers instances do not survive the contextIsolation boundary in this app, so any custom headers in one are silently lost.
+
 `;
 
-export function buildPrompt(userPrompt: string): string {
-  return CODEX_SYSTEM_PROMPT + userPrompt;
+export interface PublicProviderForPrompt {
+  name: string;
+  hostnames: string[];
+}
+
+function providersBlock(providers: PublicProviderForPrompt[]): string {
+  if (providers.length === 0) return '';
+  const lines = providers.map((p) => {
+    const urls = p.hostnames.map((h) => `https://${h}`).join(', ');
+    return `- ${p.name} (${urls}) — call via window.appFetch`;
+  });
+  return [
+    'Available providers:',
+    ...lines,
+    '',
+    'When fetching from any of the URLs above, use window.appFetch(url, init) instead of fetch(url, init). The app injects authentication automatically and returns a standard Response object. For URLs not in the list above, plain fetch() is fine.',
+    '',
+    'window.appFetch is a drop-in for fetch — same signature, same Response shape, async. It can only fetch over the network; it cannot read files or access keys.',
+    '',
+    ''
+  ].join('\n');
+}
+
+export function buildPrompt(userPrompt: string, providers: PublicProviderForPrompt[] = []): string {
+  return CODEX_SYSTEM_PROMPT + providersBlock(providers) + "The user's request:\n" + userPrompt;
 }
