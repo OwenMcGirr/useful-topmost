@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { runCodex } from '../codex-runner';
+import { DEFAULT_CODEX_TIMEOUT_MS, runCodex } from '../codex-runner';
 
 function fakeChild() {
   const ee: any = new EventEmitter();
@@ -19,6 +19,10 @@ async function tempDir(): Promise<string> {
 }
 
 describe('runCodex', () => {
+  it('uses a 10 minute default timeout', () => {
+    expect(DEFAULT_CODEX_TIMEOUT_MS).toBe(600_000);
+  });
+
   it('resolves ok when subprocess exits 0 and index.html exists', async () => {
     const cwd = await tempDir();
     const child = fakeChild();
