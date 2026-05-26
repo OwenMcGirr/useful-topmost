@@ -1,6 +1,6 @@
 {
   "name": "useful-topmost",
-  "version": "2026.1.0-alpha.1",
+  "version": "2026.1.0-alpha.2",
   "description": "Frameless full-screen Electron dashboard whose widgets are generated on the fly by the OpenAI Codex CLI.",
   "main": "out/main/index.js",
   "scripts": {
@@ -62,6 +62,7 @@
     "linux": {
       "icon": "resources/icon.png",
       "category": "Utility",
+      "maintainer": "Owen McGirr <o.a.mcgirr@gmail.com>",
       "target": [
         "AppImage",
         "deb"
