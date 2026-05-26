@@ -15,6 +15,13 @@ Data:
 - Prefer keyless public APIs (Open-Meteo for weather, Wikipedia, public RSS, public GitHub endpoints, etc.).
 - Pick a sensible refresh cadence and bake it into a setInterval.
 
+Local commands:
+- For explicit local CLI tasks, use window.local.exec(command, args). Pass the executable name as command and each argument as a separate string in args; do not build shell command strings.
+- Example: const result = await window.local.exec("gh", ["api", "user", "--jq", ".login"]);
+- window.local.exec returns { ok, stdout, exitCode, truncated, error? }. It returns stdout only, has a 30 second timeout, and caps stdout at 256 KB.
+- Always handle ok: false and truncated: true in the widget UI.
+- Prefer fetch() or window.appFetch() for ordinary web API calls. Use window.local.exec only when the user's request specifically needs local CLI access.
+
 Looking things up:
 - If you do not already know the exact shape of an API (endpoint path, query params, response JSON, auth header name), look it up via your browser or by curl-ing the official docs before writing the widget. Do not guess.
 - For any request the widget will make, confirm the URL, method, required headers, and the response shape against the upstream's documentation. A widget that hits the wrong endpoint or reads the wrong field is worse than one that fails fast.

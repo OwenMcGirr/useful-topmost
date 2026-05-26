@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { createWidgetStore } from '../widget-store';
 import { createSecretsStore } from '../secrets-store';
 import { createOnboardingStore } from '../onboarding-store';
@@ -12,7 +13,8 @@ function fakeIpcMain() {
   return {
     handle: (channel: string, fn: any) => handlers.set(channel, fn),
     handlers,
-    invoke: (channel: string, ...args: any[]) => handlers.get(channel)!({}, ...args)
+    invoke: (channel: string, ...args: any[]) => handlers.get(channel)!({}, ...args),
+    invokeWithEvent: (channel: string, event: any, ...args: any[]) => handlers.get(channel)!(event, ...args)
   };
 }
 
@@ -241,6 +243,103 @@ describe('ipc', () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  it('app:exec runs from the sender widget folder', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+    const uuid = await store.create('run gh');
+    const htmlPath = store.htmlPath(uuid);
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    const result = await ipc.invokeWithEvent(
+      'app:exec',
+      { senderFrame: { url: pathToFileURL(htmlPath).toString() } },
+      process.execPath,
+      ['-e', 'process.stdout.write(process.cwd())']
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      stdout: store.dir(uuid),
+      exitCode: 0,
+      truncated: false
+    });
+  });
+
+  it('app:exec rejects sender URLs outside the widgets root', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+    const outsideHtml = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'outside-widget-')), 'index.html');
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    const result = await ipc.invokeWithEvent(
+      'app:exec',
+      { senderFrame: { url: pathToFileURL(outsideHtml).toString() } },
+      process.execPath,
+      ['-e', 'process.stdout.write("blocked")']
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      stdout: '',
+      exitCode: null,
+      truncated: false,
+      error: 'local exec is only available to widget files'
+    });
+  });
+
+  it('app:exec rejects non-file sender URLs', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    const result = await ipc.invokeWithEvent(
+      'app:exec',
+      { senderFrame: { url: 'https://example.com/index.html' } },
+      process.execPath,
+      ['-e', 'process.stdout.write("blocked")']
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('local exec is only available to widget files');
+  });
+
+  it('app:exec rejects malformed widget paths', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+    const malformed = path.join(store.widgetsRoot(), 'abc', 'nested', 'index.html');
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    const result = await ipc.invokeWithEvent(
+      'app:exec',
+      { senderFrame: { url: pathToFileURL(malformed).toString() } },
+      process.execPath,
+      ['-e', 'process.stdout.write("blocked")']
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('local exec is only available to widget files');
   });
 
   it('widget:create passes providers to buildPrompt via runCodex', async () => {

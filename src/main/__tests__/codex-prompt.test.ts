@@ -8,6 +8,14 @@ describe('codex-prompt', () => {
     expect(CODEX_SYSTEM_PROMPT).toContain('400');
   });
 
+  it('documents local CLI execution for widgets', () => {
+    expect(CODEX_SYSTEM_PROMPT).toContain('window.local.exec(command, args)');
+    expect(CODEX_SYSTEM_PROMPT).toContain('["api", "user", "--jq", ".login"]');
+    expect(CODEX_SYSTEM_PROMPT).toContain('30 second timeout');
+    expect(CODEX_SYSTEM_PROMPT).toContain('256 KB');
+    expect(CODEX_SYSTEM_PROMPT).toContain('do not build shell command strings');
+  });
+
   it('buildPrompt appends the user prompt after the system prompt', () => {
     const out = buildPrompt('show the weather');
     expect(out.startsWith(CODEX_SYSTEM_PROMPT)).toBe(true);

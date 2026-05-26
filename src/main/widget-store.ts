@@ -23,6 +23,7 @@ export interface WidgetStore {
   list(): Promise<Widget[]>;
   delete(uuid: string): Promise<void>;
   getMeta(uuid: string): Promise<WidgetMeta>;
+  widgetsRoot(): string;
   htmlPath(uuid: string): string;
   logPath(uuid: string): string;
   dir(uuid: string): string;
@@ -54,6 +55,7 @@ export function createWidgetStore(root: string): WidgetStore {
     fs.writeFile(dashboardPath, JSON.stringify(d, null, 2));
 
   return {
+    widgetsRoot: () => widgetsRoot,
     dir: (uuid) => path.join(widgetsRoot, uuid),
     htmlPath: (uuid) => path.join(widgetsRoot, uuid, 'index.html'),
     logPath: (uuid) => path.join(widgetsRoot, uuid, 'codex.log'),

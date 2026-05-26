@@ -6,6 +6,7 @@ import type { OnboardingStore } from './onboarding-store';
 import type { runCodex as RunCodexFn } from './codex-runner';
 import { buildPrompt } from './codex-prompt';
 import { appFetch } from './proxy';
+import { runLocalExec, widgetCwdFromSenderUrl } from './local-exec';
 
 export type GetSender = () => Pick<WebContents, 'send'>;
 
@@ -103,6 +104,21 @@ export function registerIpc(
 
   ipcMain.handle('app:fetch', async (_event, url: string, init?: RequestInit) =>
     appFetch(secrets, url, init));
+
+  ipcMain.handle('app:exec', async (event, command: string, args: string[] = []) => {
+    const cwd = widgetCwdFromSenderUrl(event.senderFrame?.url ?? '', widgets.widgetsRoot());
+    if (!cwd) {
+      return {
+        ok: false,
+        stdout: '',
+        exitCode: null,
+        truncated: false,
+        error: 'local exec is only available to widget files'
+      };
+    }
+
+    return runLocalExec({ command, args }, { cwd });
+  });
 
   ipcMain.handle('app:widgetPreloadUrl', async () => {
     const widgetPreload = path.join(__dirname, '../preload/widget.js');
