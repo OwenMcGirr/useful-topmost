@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
 import type { PublicProvider, Provider } from '../main/secrets-store';
+import type { OnboardingState } from '../main/onboarding-store';
+
+export interface CodexStatus {
+  installed: boolean;
+  authenticated: boolean;
+}
 
 export interface Widget {
   uuid: string;
@@ -17,6 +23,7 @@ const api = {
   getWidgetMeta: (uuid: string) => ipcRenderer.invoke('widget:getMeta', uuid) as Promise<{ prompt: string; created_at: string }>,
   htmlUrl: (uuid: string) => ipcRenderer.invoke('widget:htmlUrl', uuid) as Promise<string>,
   codexAvailable: () => ipcRenderer.invoke('app:codexAvailable') as Promise<boolean>,
+  codexStatus: () => ipcRenderer.invoke('app:codexStatus') as Promise<CodexStatus>,
   widgetPreloadUrl: () => ipcRenderer.invoke('app:widgetPreloadUrl') as Promise<string>,
   onWidgetReady: (cb: (uuid: string) => void) => {
     const handler = (_e: IpcRendererEvent, payload: { uuid: string }) => cb(payload.uuid);
@@ -33,6 +40,10 @@ const api = {
     save: (p: Provider | (Omit<Provider, 'value'> & { value?: string })) =>
       ipcRenderer.invoke('secrets:save', p) as Promise<SaveResult>,
     delete: (id: string) => ipcRenderer.invoke('secrets:delete', id) as Promise<{ ok: true }>
+  },
+  onboarding: {
+    get: () => ipcRenderer.invoke('onboarding:get') as Promise<OnboardingState>,
+    dismiss: () => ipcRenderer.invoke('onboarding:dismiss') as Promise<{ ok: true }>
   }
 };
 

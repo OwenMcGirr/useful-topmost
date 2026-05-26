@@ -2,6 +2,7 @@ import path from 'node:path';
 import type { IpcMain, WebContents } from 'electron';
 import type { WidgetStore } from './widget-store';
 import type { SecretsStore, Provider } from './secrets-store';
+import type { OnboardingStore } from './onboarding-store';
 import type { runCodex as RunCodexFn } from './codex-runner';
 import { buildPrompt } from './codex-prompt';
 import { appFetch } from './proxy';
@@ -43,6 +44,7 @@ export function registerIpc(
   ipcMain: IpcMain,
   widgets: WidgetStore,
   secrets: SecretsStore,
+  onboarding: OnboardingStore,
   runCodex: typeof RunCodexFn,
   getSender: GetSender
 ): void {
@@ -105,5 +107,12 @@ export function registerIpc(
   ipcMain.handle('app:widgetPreloadUrl', async () => {
     const widgetPreload = path.join(__dirname, '../preload/widget.js');
     return `file://${widgetPreload.replace(/\\/g, '/')}`;
+  });
+
+  ipcMain.handle('onboarding:get', async () => onboarding.get());
+
+  ipcMain.handle('onboarding:dismiss', async () => {
+    await onboarding.dismiss();
+    return { ok: true };
   });
 }

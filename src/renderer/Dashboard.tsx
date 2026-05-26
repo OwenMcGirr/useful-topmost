@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Tile from './Tile';
 import PromptModal from './PromptModal';
 import SecretsModal from './SecretsModal';
+import WelcomeOverlay from './WelcomeOverlay';
 import type { Widget, TileState } from './types';
 
 interface TileEntry {
@@ -30,6 +31,12 @@ const GRID: React.CSSProperties = {
   gap: 16, padding: 24, justifyContent: 'center'
 };
 
+const EMPTY_HINT: React.CSSProperties = {
+  position: 'fixed', inset: 0,
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  color: '#6e7681', fontSize: 14, pointerEvents: 'none'
+};
+
 export default function Dashboard() {
   const [tiles, setTiles] = useState<TileEntry[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
@@ -37,6 +44,11 @@ export default function Dashboard() {
   const [repromptUuid, setRepromptUuid] = useState<string | null>(null);
   const [repromptInitial, setRepromptInitial] = useState('');
   const [widgetPreload, setWidgetPreload] = useState<string>('');
+  const [onboardingDismissed, setOnboardingDismissed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    void window.api.onboarding.get().then((s) => setOnboardingDismissed(s.dismissed));
+  }, []);
 
   useEffect(() => {
     // Fetch the widget preload URL BEFORE restoring tiles. Electron reads the
@@ -124,6 +136,21 @@ export default function Dashboard() {
     }
   }, [repromptUuid, handleCreate]);
 
+  const dismissOnboarding = useCallback(() => {
+    setOnboardingDismissed(true);
+    void window.api.onboarding.dismiss();
+  }, []);
+
+  const handleUseExample = useCallback((prompt: string) => {
+    dismissOnboarding();
+    setRepromptUuid(null);
+    setRepromptInitial(prompt);
+    setModalOpen(true);
+  }, [dismissOnboarding]);
+
+  const showWelcome = tiles.length === 0 && onboardingDismissed === false;
+  const showPassiveHint = tiles.length === 0 && onboardingDismissed === true;
+
   return (
     <>
       <div style={GRID}>
@@ -158,6 +185,12 @@ export default function Dashboard() {
         }}
       />
       <SecretsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      {showWelcome && (
+        <WelcomeOverlay onDismiss={dismissOnboarding} onUseExample={handleUseExample} />
+      )}
+      {showPassiveHint && (
+        <div style={EMPTY_HINT}>No widgets yet. Click + to add one.</div>
+      )}
     </>
   );
 }
