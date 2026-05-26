@@ -17,11 +17,11 @@ export interface CodexRunOptions {
   spawnFn?: typeof nodeSpawn;
 }
 
-const DEFAULT_TIMEOUT_MS = 180_000;
+export const DEFAULT_CODEX_TIMEOUT_MS = 600_000;
 const POLL_INTERVAL_MS = 500;
 
 export async function runCodex(opts: CodexRunOptions): Promise<CodexRunResult> {
-  const { prompt, cwd, timeoutMs = DEFAULT_TIMEOUT_MS, logPath, spawnFn = nodeSpawn } = opts;
+  const { prompt, cwd, timeoutMs = DEFAULT_CODEX_TIMEOUT_MS, logPath, spawnFn = nodeSpawn } = opts;
   const outputPath = path.join(cwd, 'index.html');
 
   return new Promise<CodexRunResult>((resolve) => {
