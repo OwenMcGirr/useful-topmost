@@ -1,0 +1,117 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Validate release version
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          CALVER_REGEX='^20[0-9]{2}\.[1-9][0-9]*\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "Tag v$TAG_VERSION does not match package.json version $PACKAGE_VERSION"
+            exit 1
+          fi
+
+          if [[ ! "$PACKAGE_VERSION" =~ $CALVER_REGEX ]]; then
+            echo "Version $PACKAGE_VERSION must follow YYYY.MINOR.PATCH, for example 2026.1.0"
+            exit 1
+          fi
+
+      - run: npm test
+      - run: npm run build
+
+  package:
+    name: Package ${{ matrix.platform }}
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+            script: npm run package:win
+            artifact: windows-release
+            files: |
+              dist/*.exe
+              dist/*.blockmap
+              dist/latest.yml
+          - platform: linux
+            os: ubuntu-latest
+            script: npm run package:linux
+            artifact: linux-release
+            files: |
+              dist/*.AppImage
+              dist/*.deb
+              dist/*.blockmap
+              dist/latest-linux.yml
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Package
+        run: ${{ matrix.script }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: package
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+
+          PRERELEASE_FLAG=""
+          if [[ "$TAG_VERSION" == *-* ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          gh release create "$GITHUB_REF_NAME" release-artifacts/* \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            $PRERELEASE_FLAG
