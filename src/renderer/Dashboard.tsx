@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Tile from './Tile';
 import PromptModal from './PromptModal';
-import SecretsModal from './SecretsModal';
+import SettingsModal from './SettingsModal';
 import UpdatePrompt from './UpdatePrompt';
 import WelcomeOverlay from './WelcomeOverlay';
 import type { Widget, TileState } from './types';
@@ -192,7 +192,7 @@ export default function Dashboard() {
           setRepromptUuid(null);
         }}
       />
-      <SecretsModal
+      <SettingsModal
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         updateState={updateState}

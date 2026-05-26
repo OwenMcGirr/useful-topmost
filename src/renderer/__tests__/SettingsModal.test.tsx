@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import SecretsModal from '../SecretsModal';
+import SettingsModal from '../SettingsModal';
 
 function mockApi(initial: any[] = []) {
   const state = [...initial];
@@ -28,18 +28,21 @@ beforeEach(() => {
   (window as any).api = undefined;
 });
 
-describe('SecretsModal', () => {
+describe('SettingsModal', () => {
   it('renders nothing when open is false', () => {
     const { api } = mockApi();
     (window as any).api = api;
-    const { container } = render(<SecretsModal open={false} onClose={() => {}} />);
+    const { container } = render(<SettingsModal open={false} onClose={() => {}} />);
     expect(container.textContent).toBe('');
   });
 
-  it('shows "No providers yet" when list is empty', async () => {
+  it('shows Settings and defaults to API Providers', async () => {
     const { api } = mockApi([]);
     (window as any).api = api;
-    render(<SecretsModal open={true} onClose={() => {}} />);
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /api providers/i })).toHaveAttribute('aria-current', 'page');
     expect(await screen.findByText(/no providers yet/i)).toBeInTheDocument();
   });
 
@@ -50,19 +53,18 @@ describe('SecretsModal', () => {
       auth: { type: 'query', param: 'appid' }, value: 'X'
     }]);
     (window as any).api = api;
-    render(<SecretsModal open={true} onClose={() => {}} />);
+    render(<SettingsModal open={true} onClose={() => {}} />);
     expect(await screen.findByText('OpenWeather')).toBeInTheDocument();
   });
 
-  it('Add → fill form → Save calls api.secrets.save with typed values', async () => {
+  it('Add provider flow calls api.secrets.save with typed values', async () => {
     const { api } = mockApi([]);
     (window as any).api = api;
-    render(<SecretsModal open={true} onClose={() => {}} />);
+    render(<SettingsModal open={true} onClose={() => {}} />);
 
     await userEvent.click(await screen.findByRole('button', { name: /add provider/i }));
     await userEvent.type(screen.getByLabelText(/^name$/i), 'OpenWeather');
     await userEvent.type(screen.getByLabelText(/hostnames/i), 'api.openweathermap.org');
-    // auth.type defaults to 'query'; param field is visible
     await userEvent.type(screen.getByLabelText(/param/i), 'appid');
     await userEvent.type(screen.getByLabelText(/^value$/i), 'SECRET');
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }));
@@ -82,7 +84,7 @@ describe('SecretsModal', () => {
   it('switching auth-type to header shows header fields and hides param', async () => {
     const { api } = mockApi([]);
     (window as any).api = api;
-    render(<SecretsModal open={true} onClose={() => {}} />);
+    render(<SettingsModal open={true} onClose={() => {}} />);
     await userEvent.click(await screen.findByRole('button', { name: /add provider/i }));
 
     await userEvent.selectOptions(screen.getByLabelText(/auth type/i), 'header');
@@ -95,10 +97,9 @@ describe('SecretsModal', () => {
   it('Save with empty name shows inline error and does NOT call save', async () => {
     const { api } = mockApi([]);
     (window as any).api = api;
-    render(<SecretsModal open={true} onClose={() => {}} />);
+    render(<SettingsModal open={true} onClose={() => {}} />);
     await userEvent.click(await screen.findByRole('button', { name: /add provider/i }));
 
-    // Leave name empty; fill the rest
     await userEvent.type(screen.getByLabelText(/hostnames/i), 'api.x.com');
     await userEvent.type(screen.getByLabelText(/param/i), 'k');
     await userEvent.type(screen.getByLabelText(/^value$/i), 'v');
@@ -108,14 +109,14 @@ describe('SecretsModal', () => {
     expect(api.secrets.save).not.toHaveBeenCalled();
   });
 
-  it('editing an existing entry pre-fills metadata; value field is empty', async () => {
+  it('editing an existing entry pre-fills metadata and leaves value blank', async () => {
     const { api } = mockApi([{
       id: 'p1', name: 'OpenWeather',
       hostnames: ['api.openweathermap.org', 'pro.openweathermap.org'],
       auth: { type: 'query', param: 'appid' }, value: 'EXISTING'
     }]);
     (window as any).api = api;
-    render(<SecretsModal open={true} onClose={() => {}} />);
+    render(<SettingsModal open={true} onClose={() => {}} />);
 
     await userEvent.click(await screen.findByRole('button', { name: /edit/i }));
 
@@ -131,7 +132,7 @@ describe('SecretsModal', () => {
       auth: { type: 'query', param: 'k' }, value: 'V'
     }]);
     (window as any).api = api;
-    render(<SecretsModal open={true} onClose={() => {}} />);
+    render(<SettingsModal open={true} onClose={() => {}} />);
 
     const row = (await screen.findByText('X')).closest('[data-row]') as HTMLElement;
     await userEvent.click(within(row).getByRole('button', { name: /delete/i }));
@@ -140,12 +141,12 @@ describe('SecretsModal', () => {
     await waitFor(() => expect(state).toHaveLength(0));
   });
 
-  it('Check for updates calls the supplied update handler', async () => {
+  it('shows update status and calls the supplied update handler from the Updates section', async () => {
     const { api } = mockApi([]);
     const onCheckUpdates = vi.fn();
     (window as any).api = api;
     render(
-      <SecretsModal
+      <SettingsModal
         open={true}
         onClose={() => {}}
         updateState={{ status: 'not-available' }}
@@ -153,7 +154,10 @@ describe('SecretsModal', () => {
       />
     );
 
-    expect(await screen.findByText(/up to date/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /^updates$/i }));
+
+    expect(screen.getByRole('heading', { name: /^updates$/i })).toBeInTheDocument();
+    expect(screen.getByText(/up to date/i)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /check for updates/i }));
 
     expect(onCheckUpdates).toHaveBeenCalledTimes(1);
