@@ -15,10 +15,27 @@ export interface Widget {
   created_at: string;
 }
 
+export type WidgetChatRole = 'user' | 'status';
+
+export interface WidgetChatMessage {
+  id: string;
+  role: WidgetChatRole;
+  text: string;
+  created_at: string;
+  status?: 'building' | 'updated' | 'failed';
+}
+
 interface SaveResult { ok: boolean; error?: string }
+interface ChatResult { ok: boolean; error?: string }
 
 const api = {
   createWidget: (prompt: string) => ipcRenderer.invoke('widget:create', prompt) as Promise<{ uuid: string }>,
+  chatStartWidget: (message: string) =>
+    ipcRenderer.invoke('widget:chatStart', message) as Promise<{ uuid: string }>,
+  chatSendWidget: (uuid: string, message: string) =>
+    ipcRenderer.invoke('widget:chatSend', uuid, message) as Promise<ChatResult>,
+  listWidgetChat: (uuid: string) =>
+    ipcRenderer.invoke('widget:chatList', uuid) as Promise<WidgetChatMessage[]>,
   deleteWidget: (uuid: string) => ipcRenderer.invoke('widget:delete', uuid) as Promise<{ ok: true }>,
   listWidgets: () => ipcRenderer.invoke('widget:list') as Promise<Widget[]>,
   getWidgetMeta: (uuid: string) => ipcRenderer.invoke('widget:getMeta', uuid) as Promise<{ prompt: string; created_at: string }>,

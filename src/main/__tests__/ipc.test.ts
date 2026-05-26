@@ -65,6 +65,94 @@ describe('ipc', () => {
     expect(sender.sent).toContainEqual({ channel: 'widget:error', payload: { uuid, error: 'boom' } });
   });
 
+  it('widget:chatStart creates a widget, records chat, runs codex, and sends ready', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn(async ({ cwd, prompt }: any) => {
+      expect(prompt).toContain('Conversation history:');
+      expect(prompt).toContain('make a timer');
+      await fs.writeFile(path.join(cwd, 'index.html'), '<html>timer</html>');
+      return { ok: true, path: path.join(cwd, 'index.html') };
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    const { uuid } = await ipc.invoke('widget:chatStart', 'make a timer');
+    await new Promise((r) => setTimeout(r, 10));
+
+    const meta = await store.getMeta(uuid);
+    expect(meta.chat?.map((m) => m.text)).toEqual(['make a timer', 'Updated']);
+    expect(sender.sent).toContainEqual({ channel: 'widget:ready', payload: { uuid } });
+  });
+
+  it('widget:chatStart records failure and sends widget:error', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn(async () => ({ ok: false, error: 'bad prompt' }));
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    const { uuid } = await ipc.invoke('widget:chatStart', 'make a timer');
+    await new Promise((r) => setTimeout(r, 10));
+
+    const meta = await store.getMeta(uuid);
+    expect(meta.chat?.at(-1)?.text).toBe('Failed: bad prompt');
+    expect(sender.sent).toContainEqual({ channel: 'widget:error', payload: { uuid, error: 'bad prompt' } });
+  });
+
+  it('widget:chatSend uses current HTML and chat history, then replaces live HTML on success', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const uuid = await store.create('make a clock');
+    await store.replaceWidgetHtml(uuid, '<html>old</html>');
+    await store.appendChatMessage(uuid, { id: 'm1', role: 'user', text: 'make a clock', created_at: 't1' });
+    const runCodex = vi.fn(async ({ cwd, prompt }: any) => {
+      expect(prompt).toContain('<html>old</html>');
+      expect(prompt).toContain('make it blue');
+      await fs.writeFile(path.join(cwd, 'index.html'), '<html>new</html>');
+      return { ok: true, path: path.join(cwd, 'index.html') };
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    expect(await ipc.invoke('widget:chatSend', uuid, 'make it blue')).toEqual({ ok: true });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(await store.readWidgetHtml(uuid)).toBe('<html>new</html>');
+    expect((await store.getMeta(uuid)).prompt).toBe('make it blue');
+    expect(sender.sent).toContainEqual({ channel: 'widget:ready', payload: { uuid } });
+  });
+
+  it('widget:chatSend preserves live HTML on failure and returns persisted chat', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const uuid = await store.create('make a clock');
+    await store.replaceWidgetHtml(uuid, '<html>old</html>');
+    const runCodex = vi.fn(async () => ({ ok: false, error: 'nope' }));
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    expect(await ipc.invoke('widget:chatSend', uuid, 'break it')).toEqual({ ok: true });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(await store.readWidgetHtml(uuid)).toBe('<html>old</html>');
+    const chat = await ipc.invoke('widget:chatList', uuid);
+    expect(chat.map((m: any) => m.text)).toEqual(['break it', 'Failed: nope']);
+    expect(sender.sent).toContainEqual({ channel: 'widget:error', payload: { uuid, error: 'nope' } });
+  });
+
   it('widget:delete removes the widget', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);
@@ -103,6 +191,22 @@ describe('ipc', () => {
     const list = await ipc.invoke('widget:list');
     expect(list).toHaveLength(1);
     expect(list[0].prompt).toBe('first');
+  });
+
+  it('widget:list does not include staging directories', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+    const uuid = await store.create('first');
+    await fs.mkdir(path.join(store.widgetsRoot(), '.staging', 'draft'), { recursive: true });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    const list = await ipc.invoke('widget:list');
+    expect(list.map((w: any) => w.uuid)).toEqual([uuid]);
   });
 
   // ----- API key feature -----

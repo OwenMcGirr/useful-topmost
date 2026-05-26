@@ -6,12 +6,23 @@ export interface WidgetMeta {
   prompt: string;
   created_at: string;
   codex_model?: string;
+  chat?: WidgetChatMessage[];
 }
 
 export interface Widget {
   uuid: string;
   prompt: string;
   created_at: string;
+}
+
+export type WidgetChatRole = 'user' | 'status';
+
+export interface WidgetChatMessage {
+  id: string;
+  role: WidgetChatRole;
+  text: string;
+  created_at: string;
+  status?: 'building' | 'updated' | 'failed';
 }
 
 interface DashboardFile {
@@ -23,6 +34,11 @@ export interface WidgetStore {
   list(): Promise<Widget[]>;
   delete(uuid: string): Promise<void>;
   getMeta(uuid: string): Promise<WidgetMeta>;
+  appendChatMessage(uuid: string, message: WidgetChatMessage): Promise<void>;
+  replaceChatMessage(uuid: string, messageId: string, message: WidgetChatMessage): Promise<void>;
+  updatePrompt(uuid: string, prompt: string): Promise<void>;
+  replaceWidgetHtml(uuid: string, html: string): Promise<void>;
+  readWidgetHtml(uuid: string): Promise<string | null>;
   widgetsRoot(): string;
   htmlPath(uuid: string): string;
   logPath(uuid: string): string;
@@ -54,6 +70,16 @@ export function createWidgetStore(root: string): WidgetStore {
   const writeDashboard = (d: DashboardFile) =>
     fs.writeFile(dashboardPath, JSON.stringify(d, null, 2));
 
+  const metaPath = (uuid: string) => path.join(widgetsRoot, uuid, 'meta.json');
+
+  const readMeta = async (uuid: string): Promise<WidgetMeta> => {
+    const raw = await fs.readFile(metaPath(uuid), 'utf8');
+    return JSON.parse(raw) as WidgetMeta;
+  };
+
+  const writeMeta = (uuid: string, meta: WidgetMeta) =>
+    fs.writeFile(metaPath(uuid), JSON.stringify(meta, null, 2));
+
   return {
     widgetsRoot: () => widgetsRoot,
     dir: (uuid) => path.join(widgetsRoot, uuid),
@@ -79,7 +105,7 @@ export function createWidgetStore(root: string): WidgetStore {
       const out: Widget[] = [];
       for (const uuid of d.widgets) {
         try {
-          const meta = JSON.parse(await fs.readFile(path.join(widgetsRoot, uuid, 'meta.json'), 'utf8')) as WidgetMeta;
+          const meta = await readMeta(uuid);
           out.push({ uuid, prompt: meta.prompt, created_at: meta.created_at });
         } catch {
           // Skip a widget whose meta.json was deleted out-of-band.
@@ -98,8 +124,40 @@ export function createWidgetStore(root: string): WidgetStore {
     },
 
     async getMeta(uuid) {
-      const raw = await fs.readFile(path.join(widgetsRoot, uuid, 'meta.json'), 'utf8');
-      return JSON.parse(raw) as WidgetMeta;
+      return readMeta(uuid);
+    },
+
+    async appendChatMessage(uuid, message) {
+      const meta = await readMeta(uuid);
+      const chat = meta.chat ?? [];
+      await writeMeta(uuid, { ...meta, chat: [...chat, message] });
+    },
+
+    async replaceChatMessage(uuid, messageId, message) {
+      const meta = await readMeta(uuid);
+      const chat = meta.chat ?? [];
+      await writeMeta(uuid, {
+        ...meta,
+        chat: chat.map((m) => m.id === messageId ? message : m)
+      });
+    },
+
+    async updatePrompt(uuid, prompt) {
+      const meta = await readMeta(uuid);
+      await writeMeta(uuid, { ...meta, prompt });
+    },
+
+    async replaceWidgetHtml(uuid, html) {
+      await fs.writeFile(path.join(widgetsRoot, uuid, 'index.html'), html);
+    },
+
+    async readWidgetHtml(uuid) {
+      try {
+        return await fs.readFile(path.join(widgetsRoot, uuid, 'index.html'), 'utf8');
+      } catch (e: any) {
+        if (e?.code === 'ENOENT') return null;
+        throw e;
+      }
     }
   };
 }

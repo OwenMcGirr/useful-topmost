@@ -1,9 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import Tile from './Tile';
-import PromptModal from './PromptModal';
 import SettingsModal from './SettingsModal';
 import UpdatePrompt from './UpdatePrompt';
 import WelcomeOverlay from './WelcomeOverlay';
+import WidgetChatPanel from './WidgetChatPanel';
 import type { Widget, TileState } from './types';
 import type { UpdateState } from '../preload';
 
@@ -12,7 +12,13 @@ interface TileEntry {
   prompt: string;
   state: TileState;
   htmlUrl: string;
+  revision?: number;
 }
+
+type ChatState =
+  | { open: false }
+  | { open: true; mode: 'create'; initialMessage?: string }
+  | { open: true; mode: 'edit'; widget: { uuid: string; prompt: string; htmlUrl?: string }; initialMessage?: string };
 
 const PLUS_BUTTON: React.CSSProperties = {
   position: 'fixed', bottom: 32, right: 32,
@@ -39,15 +45,22 @@ const EMPTY_HINT: React.CSSProperties = {
   color: '#6e7681', fontSize: 14, pointerEvents: 'none'
 };
 
+function cacheBust(url: string): { htmlUrl: string; revision: number } {
+  const revision = Date.now();
+  return {
+    htmlUrl: `${url}${url.includes('?') ? '&' : '?'}rev=${revision}`,
+    revision
+  };
+}
+
 export default function Dashboard() {
   const [tiles, setTiles] = useState<TileEntry[]>([]);
-  const [modalOpen, setModalOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [repromptUuid, setRepromptUuid] = useState<string | null>(null);
-  const [repromptInitial, setRepromptInitial] = useState('');
+  const [chat, setChat] = useState<ChatState>({ open: false });
   const [widgetPreload, setWidgetPreload] = useState<string>('');
   const [onboardingDismissed, setOnboardingDismissed] = useState<boolean | null>(null);
   const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' });
+  const editBuilds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     void window.api.onboarding.get().then((s) => setOnboardingDismissed(s.dismissed));
@@ -59,11 +72,6 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    // Fetch the widget preload URL BEFORE restoring tiles. Electron reads the
-    // <webview preload> attribute at navigation time, so if a tile mounts
-    // with preload="" it loads without window.appFetch — and a later attribute
-    // update won't retroactively re-inject it. Sequencing both calls in one
-    // effect guarantees widgetPreload is set before any live tile renders.
     void (async () => {
       const url = await window.api.widgetPreloadUrl();
       setWidgetPreload(url);
@@ -72,7 +80,8 @@ export default function Dashboard() {
         uuid: w.uuid,
         prompt: w.prompt,
         state: { kind: 'live' as const },
-        htmlUrl: await window.api.htmlUrl(w.uuid)
+        htmlUrl: await window.api.htmlUrl(w.uuid),
+        revision: 0
       })));
       setTiles(entries);
     })();
@@ -80,36 +89,23 @@ export default function Dashboard() {
 
   useEffect(() => {
     const offReady = window.api.onWidgetReady(async (uuid) => {
-      const htmlUrl = await window.api.htmlUrl(uuid);
-      setTiles((prev) => {
-        const oldTile = repromptUuid;
-        let next = prev.map((t) => t.uuid === uuid ? { ...t, state: { kind: 'live' as const }, htmlUrl } : t);
-        if (oldTile && oldTile !== uuid) {
-          next = next.filter((t) => t.uuid !== oldTile);
-          void window.api.deleteWidget(oldTile);
-        }
-        return next;
-      });
-      if (repromptUuid && repromptUuid !== uuid) setRepromptUuid(null);
+      const url = await window.api.htmlUrl(uuid);
+      const busted = cacheBust(url);
+      setTiles((prev) => prev.map((t) => t.uuid === uuid
+        ? { ...t, state: { kind: 'live' as const }, ...busted }
+        : t));
+      editBuilds.current.delete(uuid);
     });
     const offError = window.api.onWidgetError((uuid, msg) => {
-      const wasRepromptNew = repromptUuid && uuid !== repromptUuid;
-      setTiles((prev) => {
-        if (wasRepromptNew) return prev.filter((t) => t.uuid !== uuid);
-        return prev.map((t) => t.uuid === uuid ? { ...t, state: { kind: 'error' as const, message: msg } } : t);
-      });
-      if (wasRepromptNew) {
-        void window.api.deleteWidget(uuid);
-        setRepromptUuid(null);
+      if (editBuilds.current.has(uuid)) {
+        editBuilds.current.delete(uuid);
+        return;
       }
+      setTiles((prev) => prev.map((t) => t.uuid === uuid
+        ? { ...t, state: { kind: 'error' as const, message: msg } }
+        : t));
     });
     return () => { offReady(); offError(); };
-  }, [repromptUuid]);
-
-  const handleCreate = useCallback(async (prompt: string) => {
-    setModalOpen(false);
-    const { uuid } = await window.api.createWidget(prompt);
-    setTiles((prev) => [...prev, { uuid, prompt, state: { kind: 'building' }, htmlUrl: '' }]);
   }, []);
 
   const handleDelete = useCallback(async (uuid: string) => {
@@ -121,28 +117,29 @@ export default function Dashboard() {
     const meta = await window.api.getWidgetMeta(uuid);
     await window.api.deleteWidget(uuid);
     setTiles((prev) => prev.filter((t) => t.uuid !== uuid));
-    const created = await window.api.createWidget(meta.prompt);
+    const created = await window.api.chatStartWidget(meta.prompt);
     setTiles((prev) => [...prev, {
-      uuid: created.uuid, prompt: meta.prompt, state: { kind: 'building' }, htmlUrl: ''
+      uuid: created.uuid, prompt: meta.prompt, state: { kind: 'building' }, htmlUrl: '', revision: 0
     }]);
   }, []);
 
-  const handleReprompt = useCallback(async (uuid: string) => {
-    const meta = await window.api.getWidgetMeta(uuid);
-    setRepromptUuid(uuid);
-    setRepromptInitial(meta.prompt);
-    setModalOpen(true);
+  const handleEditChat = useCallback((tile: TileEntry) => {
+    setChat({
+      open: true,
+      mode: 'edit',
+      widget: { uuid: tile.uuid, prompt: tile.prompt, htmlUrl: tile.htmlUrl }
+    });
   }, []);
 
-  const handleModalSubmit = useCallback(async (prompt: string) => {
-    setModalOpen(false);
-    if (repromptUuid) {
-      const { uuid } = await window.api.createWidget(prompt);
-      setTiles((prev) => [...prev, { uuid, prompt, state: { kind: 'building' }, htmlUrl: '' }]);
-    } else {
-      await handleCreate(prompt);
-    }
-  }, [repromptUuid, handleCreate]);
+  const handleChatCreated = useCallback((uuid: string, prompt: string) => {
+    setTiles((prev) => [...prev, { uuid, prompt, state: { kind: 'building' }, htmlUrl: '', revision: 0 }]);
+    setChat({ open: true, mode: 'edit', widget: { uuid, prompt } });
+  }, []);
+
+  const handleChatSent = useCallback((uuid: string, prompt: string) => {
+    editBuilds.current.add(uuid);
+    setTiles((prev) => prev.map((t) => t.uuid === uuid ? { ...t, prompt } : t));
+  }, []);
 
   const dismissOnboarding = useCallback(() => {
     setOnboardingDismissed(true);
@@ -151,9 +148,7 @@ export default function Dashboard() {
 
   const handleUseExample = useCallback((prompt: string) => {
     dismissOnboarding();
-    setRepromptUuid(null);
-    setRepromptInitial(prompt);
-    setModalOpen(true);
+    setChat({ open: true, mode: 'create', initialMessage: prompt });
   }, [dismissOnboarding]);
 
   const showWelcome = tiles.length === 0 && onboardingDismissed === false;
@@ -164,7 +159,7 @@ export default function Dashboard() {
       <div style={GRID}>
         {tiles.map((t) => (
           <Tile
-            key={t.uuid}
+            key={`${t.uuid}-${t.revision ?? 0}`}
             uuid={t.uuid}
             prompt={t.prompt}
             state={t.state}
@@ -172,25 +167,22 @@ export default function Dashboard() {
             widgetPreloadUrl={widgetPreload}
             onRefresh={() => {}}
             onDismiss={() => handleDelete(t.uuid)}
-            onReprompt={() => handleReprompt(t.uuid)}
+            onEditChat={() => handleEditChat(t)}
             onRetry={() => handleRetry(t.uuid)}
           />
         ))}
       </div>
       <button aria-label="settings" style={GEAR_BUTTON} onClick={() => setSettingsOpen(true)}>⚙</button>
-      <button style={PLUS_BUTTON} onClick={() => {
-        setRepromptUuid(null);
-        setRepromptInitial('');
-        setModalOpen(true);
-      }}>+</button>
-      <PromptModal
-        open={modalOpen}
-        initialValue={repromptInitial}
-        onSubmit={handleModalSubmit}
-        onClose={() => {
-          setModalOpen(false);
-          setRepromptUuid(null);
-        }}
+      <button style={PLUS_BUTTON} onClick={() => setChat({ open: true, mode: 'create' })}>+</button>
+      <WidgetChatPanel
+        open={chat.open}
+        mode={chat.open ? chat.mode : 'create'}
+        widget={chat.open && chat.mode === 'edit' ? chat.widget : undefined}
+        initialMessage={chat.open ? chat.initialMessage : undefined}
+        widgetPreloadUrl={widgetPreload}
+        onClose={() => setChat({ open: false })}
+        onCreated={handleChatCreated}
+        onSent={handleChatSent}
       />
       <SettingsModal
         open={settingsOpen}

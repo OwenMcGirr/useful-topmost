@@ -1,3 +1,5 @@
+import type { WidgetChatMessage } from './widget-store';
+
 export const CODEX_SYSTEM_PROMPT = `You are generating a single self-contained HTML widget that will be displayed in a 400x300 px tile on a dashboard.
 
 Output contract (required):
@@ -52,6 +54,46 @@ function providersBlock(providers: PublicProviderForPrompt[]): string {
   ].join('\n');
 }
 
+export interface BuildChatPromptOptions {
+  messages: WidgetChatMessage[];
+  currentHtml?: string | null;
+  providers?: PublicProviderForPrompt[];
+}
+
 export function buildPrompt(userPrompt: string, providers: PublicProviderForPrompt[] = []): string {
   return CODEX_SYSTEM_PROMPT + providersBlock(providers) + "The user's request:\n" + userPrompt;
+}
+
+export function buildChatPrompt({
+  messages,
+  currentHtml = null,
+  providers = []
+}: BuildChatPromptOptions): string {
+  const userMessages = messages.filter((m) => m.role === 'user');
+  const latest = userMessages[userMessages.length - 1]?.text ?? '';
+  const history = userMessages
+    .map((m, i) => `${i + 1}. ${m.text}`)
+    .join('\n');
+  const currentHtmlBlock = currentHtml
+    ? [
+        'Current widget index.html:',
+        '```html',
+        currentHtml,
+        '```',
+        ''
+      ].join('\n')
+    : '';
+
+  return [
+    CODEX_SYSTEM_PROMPT,
+    providersBlock(providers),
+    'Conversation history:',
+    history || '(none)',
+    '',
+    currentHtmlBlock,
+    'Revise or create the widget according to the latest user request. Preserve useful existing behavior unless the latest request contradicts it.',
+    '',
+    "The user's latest request:",
+    latest
+  ].join('\n');
 }
