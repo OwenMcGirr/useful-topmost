@@ -105,14 +105,15 @@ describe('Dashboard', () => {
     expect(await screen.findByText(/boom/)).toBeInTheDocument();
   });
 
-  it('renders a gear button that opens the SecretsModal', async () => {
+  it('renders a gear button that opens Settings', async () => {
     const m = mockApi();
     (window as any).api = m.api;
 
     render(<Dashboard />);
 
     await userEvent.click(await screen.findByRole('button', { name: /settings/i }));
-    expect(await screen.findByText(/api providers/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /settings/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /api providers/i })).toBeInTheDocument();
   });
 
   // ----- Onboarding overlay -----
