@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import Dashboard from './Dashboard';
 import SetupScreen from './SetupScreen';
+import type { CodexStatus } from '../preload';
 
 export default function App() {
-  const [codexAvailable, setCodexAvailable] = useState<boolean | null>(null);
+  const [status, setStatus] = useState<CodexStatus | null>(null);
 
   useEffect(() => {
-    window.api.codexAvailable().then(setCodexAvailable);
+    window.api.codexStatus().then(setStatus);
   }, []);
 
-  if (codexAvailable === null) return <div style={{ padding: 24 }}>Checking Codex…</div>;
-  if (!codexAvailable) return <SetupScreen />;
+  if (status === null) return <div style={{ padding: 24 }}>Checking Codex…</div>;
+  if (!status.installed) return <SetupScreen mode="install" />;
+  if (!status.authenticated) return <SetupScreen mode="login" />;
   return <Dashboard />;
 }
