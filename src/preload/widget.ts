@@ -6,6 +6,21 @@ interface FetchEnvelope {
   body: string;
 }
 
+type LocalExecResult =
+  | {
+      ok: true;
+      stdout: string;
+      exitCode: number;
+      truncated: boolean;
+    }
+  | {
+      ok: false;
+      stdout: string;
+      exitCode: number | null;
+      truncated: boolean;
+      error: string;
+    };
+
 // Headers and tuple arrays don't survive structured-clone over IPC.
 // Normalize whatever the caller passed into a plain object the main proxy
 // can read.
@@ -105,3 +120,8 @@ async function appFetch(url: string, init?: RequestInit): Promise<ResponseLike> 
 }
 
 contextBridge.exposeInMainWorld('appFetch', appFetch);
+
+contextBridge.exposeInMainWorld('local', {
+  exec: (command: string, args: string[] = []): Promise<LocalExecResult> =>
+    ipcRenderer.invoke('app:exec', command, args) as Promise<LocalExecResult>
+});
