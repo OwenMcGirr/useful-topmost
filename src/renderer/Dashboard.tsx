@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import Tile from './Tile';
 import SettingsModal from './SettingsModal';
 import UpdatePrompt from './UpdatePrompt';
@@ -6,6 +7,13 @@ import WelcomeOverlay from './WelcomeOverlay';
 import WidgetChatPanel from './WidgetChatPanel';
 import type { Widget, TileState } from './types';
 import type { UpdateState } from '../preload';
+import {
+  DASHBOARD_PADDING,
+  SHUFFLE_INTERVAL_MS,
+  TILE_GAP,
+  calculateDashboardCapacity,
+  pickRandomTiles
+} from './dashboard-grid';
 
 interface TileEntry {
   uuid: string;
@@ -34,9 +42,11 @@ const GEAR_BUTTON: React.CSSProperties = {
   border: '1px solid #30363d', cursor: 'pointer', zIndex: 50
 };
 
-const GRID: React.CSSProperties = {
-  display: 'grid', gridTemplateColumns: 'repeat(auto-fit, 400px)',
-  gap: 16, padding: 24, justifyContent: 'center'
+const SHUFFLE_BUTTON: React.CSSProperties = {
+  position: 'fixed', bottom: 32, right: 176,
+  height: 48, padding: '0 16px', borderRadius: 24,
+  background: '#21262d', color: '#e6edf3', fontSize: 14,
+  border: '1px solid #30363d', cursor: 'pointer', zIndex: 50
 };
 
 const EMPTY_HINT: React.CSSProperties = {
@@ -55,15 +65,64 @@ function cacheBust(url: string): { htmlUrl: string; revision: number } {
 
 export default function Dashboard() {
   const [tiles, setTiles] = useState<TileEntry[]>([]);
+  const [gridSize, setGridSize] = useState({ width: 0, height: 0 });
+  const [visibleIds, setVisibleIds] = useState<string[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chat, setChat] = useState<ChatState>({ open: false });
   const [widgetPreload, setWidgetPreload] = useState<string>('');
   const [onboardingDismissed, setOnboardingDismissed] = useState<boolean | null>(null);
   const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' });
   const editBuilds = useRef<Set<string>>(new Set());
+  const gridRef = useRef<HTMLDivElement | null>(null);
+
+  const { columns, capacity } = useMemo(() => {
+    const width = gridSize.width || window.innerWidth || 1;
+    const height = gridSize.height || window.innerHeight || 1;
+    return calculateDashboardCapacity(width, height);
+  }, [gridSize.height, gridSize.width]);
+
+  const gridStyle = useMemo<React.CSSProperties>(() => ({
+    display: 'grid',
+    gridTemplateColumns: `repeat(${columns}, 400px)`,
+    gridAutoRows: '300px',
+    gap: TILE_GAP,
+    padding: DASHBOARD_PADDING,
+    justifyContent: 'center',
+    alignContent: 'center',
+    height: '100vh',
+    overflow: 'hidden'
+  }), [columns]);
 
   useEffect(() => {
     void window.api.onboarding.get().then((s) => setOnboardingDismissed(s.dismissed));
+  }, []);
+
+  useEffect(() => {
+    const node = gridRef.current;
+    if (!node) return;
+
+    const updateSize = () => {
+      setGridSize({
+        width: node.clientWidth || window.innerWidth,
+        height: node.clientHeight || window.innerHeight
+      });
+    };
+
+    updateSize();
+
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      setGridSize({
+        width: entry.contentRect.width,
+        height: entry.contentRect.height
+      });
+    });
+
+    observer.observe(node);
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
@@ -151,27 +210,83 @@ export default function Dashboard() {
     setChat({ open: true, mode: 'create', initialMessage: prompt });
   }, [dismissOnboarding]);
 
+  const shuffleVisibleTiles = useCallback(() => {
+    setVisibleIds((previousIds) => {
+      if (tiles.length <= capacity) return tiles.map((tile) => tile.uuid);
+
+      const previousTiles = previousIds
+        .map((id) => tiles.find((tile) => tile.uuid === id))
+        .filter((tile): tile is TileEntry => Boolean(tile));
+
+      return pickRandomTiles(tiles, capacity, previousTiles).map((tile) => tile.uuid);
+    });
+  }, [capacity, tiles]);
+
+  useEffect(() => {
+    setVisibleIds((previousIds) => {
+      if (tiles.length <= capacity) return tiles.map((tile) => tile.uuid);
+
+      const currentVisibleTiles = previousIds
+        .map((id) => tiles.find((tile) => tile.uuid === id))
+        .filter((tile): tile is TileEntry => Boolean(tile));
+
+      if (currentVisibleTiles.length === capacity) {
+        return currentVisibleTiles.map((tile) => tile.uuid);
+      }
+
+      return pickRandomTiles(tiles, capacity, currentVisibleTiles).map((tile) => tile.uuid);
+    });
+  }, [capacity, tiles]);
+
+  useEffect(() => {
+    if (tiles.length <= capacity) return;
+    const interval = window.setInterval(shuffleVisibleTiles, SHUFFLE_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [capacity, shuffleVisibleTiles, tiles.length]);
+
+  const visibleTiles = useMemo(() => {
+    if (tiles.length <= capacity) return tiles;
+
+    return visibleIds
+      .map((id) => tiles.find((tile) => tile.uuid === id))
+      .filter((tile): tile is TileEntry => Boolean(tile));
+  }, [capacity, tiles, visibleIds]);
+
   const showWelcome = tiles.length === 0 && onboardingDismissed === false;
   const showPassiveHint = tiles.length === 0 && onboardingDismissed === true;
+  const showShuffle = tiles.length > capacity;
 
   return (
     <>
-      <div style={GRID}>
-        {tiles.map((t) => (
-          <Tile
-            key={`${t.uuid}-${t.revision ?? 0}`}
-            uuid={t.uuid}
-            prompt={t.prompt}
-            state={t.state}
-            htmlUrl={t.htmlUrl}
-            widgetPreloadUrl={widgetPreload}
-            onRefresh={() => {}}
-            onDismiss={() => handleDelete(t.uuid)}
-            onEditChat={() => handleEditChat(t)}
-            onRetry={() => handleRetry(t.uuid)}
-          />
-        ))}
+      <div ref={gridRef} style={gridStyle}>
+        <AnimatePresence mode="popLayout">
+          {visibleTiles.map((t) => (
+            <motion.div
+              key={`${t.uuid}-${t.revision ?? 0}`}
+              layout
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              transition={{ duration: 0.18 }}
+            >
+              <Tile
+                uuid={t.uuid}
+                prompt={t.prompt}
+                state={t.state}
+                htmlUrl={t.htmlUrl}
+                widgetPreloadUrl={widgetPreload}
+                onRefresh={() => {}}
+                onDismiss={() => handleDelete(t.uuid)}
+                onEditChat={() => handleEditChat(t)}
+                onRetry={() => handleRetry(t.uuid)}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
+      {showShuffle && (
+        <button aria-label="shuffle widgets" style={SHUFFLE_BUTTON} onClick={shuffleVisibleTiles}>shuffle</button>
+      )}
       <button aria-label="settings" style={GEAR_BUTTON} onClick={() => setSettingsOpen(true)}>⚙</button>
       <button style={PLUS_BUTTON} onClick={() => setChat({ open: true, mode: 'create' })}>+</button>
       <WidgetChatPanel

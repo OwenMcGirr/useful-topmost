@@ -1,7 +1,54 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import Dashboard from '../Dashboard';
+
+let resizeCallback: ResizeObserverCallback | null = null;
+
+class ResizeObserverMock {
+  callback: ResizeObserverCallback;
+
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback;
+    resizeCallback = callback;
+  }
+
+  observe() {}
+  disconnect() {}
+  unobserve() {}
+}
+
+function triggerDashboardResize(width = 880, height = 680) {
+  act(() => {
+    resizeCallback?.([
+      {
+        contentRect: {
+          width,
+          height,
+          x: 0,
+          y: 0,
+          top: 0,
+          left: 0,
+          right: width,
+          bottom: height,
+          toJSON: () => ({})
+        }
+      } as ResizeObserverEntry
+    ], {} as ResizeObserver);
+  });
+}
+
+function widgets(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    uuid: `widget-${index + 1}`,
+    prompt: `widget ${index + 1}`,
+    created_at: ''
+  }));
+}
+
+function renderedWidgetSrcs(container: HTMLElement) {
+  return Array.from(container.querySelectorAll('webview')).map((webview) => webview.getAttribute('src') ?? '');
+}
 
 function mockApi(opts: { onboardingDismissed?: boolean } = {}) {
   const readyHandlers: Array<(uuid: string) => void> = [];
@@ -57,6 +104,16 @@ function mockApi(opts: { onboardingDismissed?: boolean } = {}) {
 
 beforeEach(() => {
   (window as any).api = undefined;
+  resizeCallback = null;
+  vi.stubGlobal('ResizeObserver', ResizeObserverMock);
+  Object.defineProperty(window, 'innerWidth', { value: 880, configurable: true });
+  Object.defineProperty(window, 'innerHeight', { value: 680, configurable: true });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe('Dashboard', () => {
@@ -69,8 +126,92 @@ describe('Dashboard', () => {
     (window as any).api = m.api;
 
     const { container } = render(<Dashboard />);
+    triggerDashboardResize();
 
     await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(2));
+  });
+
+  it('renders all widgets when count is less than or equal to capacity', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce(widgets(4));
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize();
+
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(4));
+    expect(screen.queryByRole('button', { name: /shuffle widgets/i })).toBeNull();
+  });
+
+  it('renders only capacity widgets when widget count exceeds capacity', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce(widgets(5));
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize();
+
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(4));
+    expect(container.querySelectorAll('webview').length).not.toBe(5);
+    expect(screen.getByRole('button', { name: /shuffle widgets/i })).toBeInTheDocument();
+  });
+
+  it('clicking shuffle changes the visible set when another set is possible', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce(widgets(5));
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize();
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(4));
+    const before = renderedWidgetSrcs(container);
+
+    await userEvent.click(screen.getByRole('button', { name: /shuffle widgets/i }));
+
+    await waitFor(() => expect(renderedWidgetSrcs(container)).not.toEqual(before));
+  });
+
+  it('auto-rotates the visible widget set after 60 seconds', async () => {
+    let intervalCallback: TimerHandler | undefined;
+    const intervalSpy = vi.spyOn(window, 'setInterval').mockImplementation((handler: TimerHandler, timeout?: number) => {
+      if (timeout === 60_000) intervalCallback = handler;
+      return 1;
+    });
+    const clearSpy = vi.spyOn(window, 'clearInterval').mockImplementation(() => undefined);
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce(widgets(5));
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize();
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(4));
+    const before = renderedWidgetSrcs(container);
+    expect(intervalSpy).toHaveBeenCalledWith(expect.any(Function), 60_000);
+    const random = vi.spyOn(Math, 'random')
+      .mockReturnValueOnce(0.9)
+      .mockReturnValueOnce(0.8)
+      .mockReturnValueOnce(0.7)
+      .mockReturnValueOnce(0.6);
+
+    act(() => {
+      if (typeof intervalCallback === 'function') intervalCallback();
+    });
+
+    await waitFor(() => expect(renderedWidgetSrcs(container)).not.toEqual(before));
+    random.mockRestore();
+    clearSpy.mockRestore();
+  });
+
+  it('hidden widgets are not deleted', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce(widgets(5));
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize();
+
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(4));
+    expect(m.api.deleteWidget).not.toHaveBeenCalled();
   });
 
   it('+ button opens chat panel; sending calls chatStartWidget and adds a building tile', async () => {
@@ -164,8 +305,7 @@ describe('Dashboard', () => {
 
     m.fireReady('a');
 
-    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(1));
-    expect(container.querySelector('webview')?.getAttribute('src')).toContain('rev=');
+    await waitFor(() => expect(renderedWidgetSrcs(container).some((src) => src.includes('rev='))).toBe(true));
   });
 
   it('shows the welcome overlay when tiles are empty and onboarding is not dismissed', async () => {
