@@ -1,10 +1,12 @@
 import path from 'node:path';
+import { promises as fs } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import type { IpcMain, WebContents } from 'electron';
 import type { WidgetStore } from './widget-store';
 import type { SecretsStore, Provider } from './secrets-store';
 import type { OnboardingStore } from './onboarding-store';
 import type { runCodex as RunCodexFn } from './codex-runner';
-import { buildPrompt } from './codex-prompt';
+import { buildChatPrompt, buildPrompt } from './codex-prompt';
 import { appFetch } from './proxy';
 import { runLocalExec, widgetCwdFromSenderUrl } from './local-exec';
 
@@ -13,6 +15,10 @@ export type GetSender = () => Pick<WebContents, 'send'>;
 interface SaveResultOk { ok: true }
 interface SaveResultErr { ok: false; error: string }
 type SaveResult = SaveResultOk | SaveResultErr;
+
+interface ChatResultOk { ok: true }
+interface ChatResultErr { ok: false; error: string }
+type ChatResult = ChatResultOk | ChatResultErr;
 
 function validateProvider(p: any): SaveResultErr | null {
   if (!p || typeof p !== 'object') return { ok: false, error: 'provider must be an object' };
@@ -41,6 +47,16 @@ function validateProvider(p: any): SaveResultErr | null {
   return null;
 }
 
+function chatMessage(role: 'user' | 'status', text: string, status?: 'building' | 'updated' | 'failed') {
+  return {
+    id: randomUUID(),
+    role,
+    text,
+    created_at: new Date().toISOString(),
+    ...(status ? { status } : {})
+  };
+}
+
 export function registerIpc(
   ipcMain: IpcMain,
   widgets: WidgetStore,
@@ -66,6 +82,118 @@ export function registerIpc(
       }
     })();
     return { uuid };
+  });
+
+  ipcMain.handle('widget:chatStart', async (_event, message: string) => {
+    const trimmed = typeof message === 'string' ? message.trim() : '';
+    if (!trimmed) throw new Error('message is required');
+
+    const uuid = await widgets.create(trimmed);
+    await widgets.appendChatMessage(uuid, chatMessage('user', trimmed));
+    const status = chatMessage('status', 'Building...', 'building');
+    await widgets.appendChatMessage(uuid, status);
+
+    void (async () => {
+      const sender = getSender();
+      const providers = await secrets.list();
+      const meta = await widgets.getMeta(uuid);
+      const result = await runCodex({
+        prompt: buildChatPrompt({ messages: meta.chat ?? [], providers }),
+        cwd: widgets.dir(uuid),
+        logPath: widgets.logPath(uuid)
+      });
+      if (result.ok) {
+        await widgets.replaceChatMessage(uuid, status.id, {
+          ...status,
+          text: 'Updated',
+          status: 'updated',
+          created_at: new Date().toISOString()
+        });
+        sender.send('widget:ready', { uuid });
+      } else {
+        const error = result.error ?? 'unknown';
+        await widgets.replaceChatMessage(uuid, status.id, {
+          ...status,
+          text: `Failed: ${error}`,
+          status: 'failed',
+          created_at: new Date().toISOString()
+        });
+        sender.send('widget:error', { uuid, error });
+      }
+    })();
+
+    return { uuid };
+  });
+
+  ipcMain.handle('widget:chatSend', async (_event, uuid: string, message: string): Promise<ChatResult> => {
+    const trimmed = typeof message === 'string' ? message.trim() : '';
+    if (!trimmed) return { ok: false, error: 'message is required' };
+
+    try {
+      await widgets.getMeta(uuid);
+    } catch {
+      return { ok: false, error: 'widget not found' };
+    }
+
+    await widgets.appendChatMessage(uuid, chatMessage('user', trimmed));
+    const status = chatMessage('status', 'Building...', 'building');
+    await widgets.appendChatMessage(uuid, status);
+
+    void (async () => {
+      const sender = getSender();
+      const stagingDir = path.join(widgets.widgetsRoot(), '.staging', `${uuid}-${randomUUID()}`);
+      try {
+        await fs.mkdir(stagingDir, { recursive: true });
+        const providers = await secrets.list();
+        const meta = await widgets.getMeta(uuid);
+        const currentHtml = await widgets.readWidgetHtml(uuid);
+        const result = await runCodex({
+          prompt: buildChatPrompt({ messages: meta.chat ?? [], currentHtml, providers }),
+          cwd: stagingDir,
+          logPath: path.join(stagingDir, 'codex.log')
+        });
+
+        if (result.ok) {
+          const stagedHtml = await fs.readFile(path.join(stagingDir, 'index.html'), 'utf8');
+          await widgets.replaceWidgetHtml(uuid, stagedHtml);
+          await widgets.updatePrompt(uuid, trimmed);
+          await widgets.replaceChatMessage(uuid, status.id, {
+            ...status,
+            text: 'Updated',
+            status: 'updated',
+            created_at: new Date().toISOString()
+          });
+          sender.send('widget:ready', { uuid });
+        } else {
+          const error = result.error ?? 'unknown';
+          await widgets.replaceChatMessage(uuid, status.id, {
+            ...status,
+            text: `Failed: ${error}`,
+            status: 'failed',
+            created_at: new Date().toISOString()
+          });
+          sender.send('widget:error', { uuid, error });
+        }
+      } catch (e: any) {
+        const error = e?.message ?? 'unknown';
+        await widgets.replaceChatMessage(uuid, status.id, {
+          ...status,
+          text: `Failed: ${error}`,
+          status: 'failed',
+          created_at: new Date().toISOString()
+        });
+        sender.send('widget:error', { uuid, error });
+      } finally {
+        await fs.rm(stagingDir, { recursive: true, force: true });
+      }
+    })();
+
+    return { ok: true };
+  });
+
+  ipcMain.handle('widget:chatList', async (_event, uuid: string) => {
+    const meta = await widgets.getMeta(uuid);
+    return meta.chat ?? [];
   });
 
   ipcMain.handle('widget:delete', async (_event, uuid: string) => {

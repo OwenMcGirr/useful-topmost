@@ -14,7 +14,7 @@ describe('Tile', () => {
         widgetPreloadUrl=""
         onRefresh={() => {}}
         onDismiss={() => {}}
-        onReprompt={() => {}}
+        onEditChat={() => {}}
         onRetry={() => {}}
       />
     );
@@ -31,7 +31,7 @@ describe('Tile', () => {
         widgetPreloadUrl=""
         onRefresh={() => {}}
         onDismiss={() => {}}
-        onReprompt={() => {}}
+        onEditChat={() => {}}
         onRetry={() => {}}
       />
     );
@@ -52,7 +52,7 @@ describe('Tile', () => {
         widgetPreloadUrl=""
         onRefresh={() => {}}
         onDismiss={onDismiss}
-        onReprompt={() => {}}
+        onEditChat={() => {}}
         onRetry={onRetry}
       />
     );
@@ -66,7 +66,7 @@ describe('Tile', () => {
   it('chrome buttons call the right callbacks when live', async () => {
     const onRefresh = vi.fn();
     const onDismiss = vi.fn();
-    const onReprompt = vi.fn();
+    const onEditChat = vi.fn();
     render(
       <Tile
         uuid="u1"
@@ -76,15 +76,15 @@ describe('Tile', () => {
         widgetPreloadUrl=""
         onRefresh={onRefresh}
         onDismiss={onDismiss}
-        onReprompt={onReprompt}
+        onEditChat={onEditChat}
         onRetry={() => {}}
       />
     );
     await userEvent.click(screen.getByRole('button', { name: /refresh/i }));
-    await userEvent.click(screen.getByRole('button', { name: /re-prompt/i }));
+    await userEvent.click(screen.getByRole('button', { name: /edit with chat/i }));
     await userEvent.click(screen.getByRole('button', { name: /dismiss/i }));
     expect(onRefresh).toHaveBeenCalled();
-    expect(onReprompt).toHaveBeenCalled();
+    expect(onEditChat).toHaveBeenCalled();
     expect(onDismiss).toHaveBeenCalled();
   });
 });

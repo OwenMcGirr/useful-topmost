@@ -71,4 +71,55 @@ describe('widget-store', () => {
     const uuid = await store.create('p');
     expect(store.htmlPath(uuid)).toBe(path.join(root, 'widgets', uuid, 'index.html'));
   });
+
+  it('appends and replaces chat messages', async () => {
+    const root = await freshRoot();
+    const store = createWidgetStore(root);
+    const uuid = await store.create('p');
+    const userMessage = { id: 'm1', role: 'user' as const, text: 'make a clock', created_at: 'now' };
+    const statusMessage = { id: 'm2', role: 'status' as const, text: 'Building...', created_at: 'now', status: 'building' as const };
+
+    await store.appendChatMessage(uuid, userMessage);
+    await store.appendChatMessage(uuid, statusMessage);
+    await store.replaceChatMessage(uuid, 'm2', { ...statusMessage, text: 'Updated', status: 'updated' });
+
+    expect((await store.getMeta(uuid)).chat).toEqual([
+      userMessage,
+      { ...statusMessage, text: 'Updated', status: 'updated' }
+    ]);
+  });
+
+  it('updates prompt', async () => {
+    const root = await freshRoot();
+    const store = createWidgetStore(root);
+    const uuid = await store.create('old');
+
+    await store.updatePrompt(uuid, 'new');
+
+    expect((await store.getMeta(uuid)).prompt).toBe('new');
+  });
+
+  it('reads and replaces widget HTML', async () => {
+    const root = await freshRoot();
+    const store = createWidgetStore(root);
+    const uuid = await store.create('p');
+
+    expect(await store.readWidgetHtml(uuid)).toBeNull();
+    await store.replaceWidgetHtml(uuid, '<html>ok</html>');
+
+    expect(await store.readWidgetHtml(uuid)).toBe('<html>ok</html>');
+  });
+
+  it('existing widgets without chat still load', async () => {
+    const root = await freshRoot();
+    const store = createWidgetStore(root);
+    const uuid = await store.create('legacy');
+    const metaPath = path.join(root, 'widgets', uuid, 'meta.json');
+    const meta = JSON.parse(await fs.readFile(metaPath, 'utf8'));
+    delete meta.chat;
+    await fs.writeFile(metaPath, JSON.stringify(meta, null, 2));
+
+    expect(await store.list()).toEqual([{ uuid, prompt: 'legacy', created_at: meta.created_at }]);
+    expect((await store.getMeta(uuid)).chat).toBeUndefined();
+  });
 });

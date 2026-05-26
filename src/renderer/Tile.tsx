@@ -9,7 +9,7 @@ interface Props {
   widgetPreloadUrl: string;
   onRefresh: () => void;
   onDismiss: () => void;
-  onReprompt: () => void;
+  onEditChat: () => void;
   onRetry: () => void;
 }
 
@@ -56,7 +56,7 @@ export default function Tile(props: Props) {
         {props.state.kind === 'live' && (
           <>
             <button style={BTN} onClick={handleRefresh}>refresh</button>
-            <button style={BTN} onClick={props.onReprompt}>re-prompt</button>
+            <button style={BTN} onClick={props.onEditChat}>Edit with chat</button>
           </>
         )}
         {props.state.kind === 'error' && (

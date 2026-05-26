@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CODEX_SYSTEM_PROMPT, buildPrompt } from '../codex-prompt';
+import { CODEX_SYSTEM_PROMPT, buildChatPrompt, buildPrompt } from '../codex-prompt';
 
 describe('codex-prompt', () => {
   it('exports a non-empty system prompt that mentions the output contract', () => {
@@ -42,5 +42,35 @@ describe('codex-prompt', () => {
     const userReqIdx = out.indexOf("The user's request:");
     expect(providersIdx).toBeGreaterThan(0);
     expect(userReqIdx).toBeGreaterThan(providersIdx);
+  });
+
+  it('buildChatPrompt includes chat history and current HTML', () => {
+    const out = buildChatPrompt({
+      messages: [
+        { id: '1', role: 'user', text: 'make a clock', created_at: 't1' },
+        { id: '2', role: 'status', text: 'Updated', created_at: 't2', status: 'updated' },
+        { id: '3', role: 'user', text: 'make it blue', created_at: 't3' }
+      ],
+      currentHtml: '<html><body>clock</body></html>'
+    });
+
+    expect(out).toContain(CODEX_SYSTEM_PROMPT);
+    expect(out).toContain('Conversation history:');
+    expect(out).toContain('1. make a clock');
+    expect(out).toContain('2. make it blue');
+    expect(out).toContain('Current widget index.html:');
+    expect(out).toContain('<html><body>clock</body></html>');
+    expect(out).toMatch(/user's latest request:\s*make it blue/i);
+  });
+
+  it('buildChatPrompt includes provider block', () => {
+    const out = buildChatPrompt({
+      messages: [{ id: '1', role: 'user', text: 'show weather', created_at: 't1' }],
+      providers: [{ name: 'OpenWeather', hostnames: ['api.openweathermap.org'] }]
+    });
+
+    expect(out).toContain('Available providers:');
+    expect(out).toContain('OpenWeather');
+    expect(out).toContain('window.appFetch');
   });
 });
