@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import type { PublicProvider, Provider, AuthStrategy } from '../main/secrets-store';
 import { BTN, BTN_DANGER, BTN_PRIMARY, FIELD, INPUT, ROW } from './settingsStyles';
 
+type HeaderScheme = 'none' | 'bearer' | 'basic' | 'token' | 'custom';
+
 interface Draft {
   id: string;
   name: string;
@@ -9,7 +11,8 @@ interface Draft {
   authType: 'query' | 'header';
   param: string;
   headerName: string;
-  headerPrefix: string;
+  headerScheme: HeaderScheme;
+  headerCustomPrefix: string;
   value: string;
   editing: boolean;
 }
@@ -21,10 +24,29 @@ const empty: Draft = {
   authType: 'query',
   param: '',
   headerName: '',
-  headerPrefix: '',
+  headerScheme: 'none',
+  headerCustomPrefix: '',
   value: '',
   editing: false
 };
+
+function schemeToPrefix(scheme: HeaderScheme, customPrefix: string): string | undefined {
+  switch (scheme) {
+    case 'none': return undefined;
+    case 'bearer': return 'Bearer ';
+    case 'basic': return 'Basic ';
+    case 'token': return 'Token ';
+    case 'custom': return customPrefix || undefined;
+  }
+}
+
+function prefixToScheme(prefix: string | undefined): { scheme: HeaderScheme; custom: string } {
+  if (!prefix) return { scheme: 'none', custom: '' };
+  if (prefix === 'Bearer ') return { scheme: 'bearer', custom: '' };
+  if (prefix === 'Basic ') return { scheme: 'basic', custom: '' };
+  if (prefix === 'Token ') return { scheme: 'token', custom: '' };
+  return { scheme: 'custom', custom: prefix };
+}
 
 export default function ApiProvidersSettings() {
   const [providers, setProviders] = useState<PublicProvider[]>([]);
@@ -47,6 +69,8 @@ export default function ApiProvidersSettings() {
   };
 
   const startEdit = (p: PublicProvider) => {
+    const existingPrefix = p.auth.type === 'header' ? p.auth.prefix : undefined;
+    const { scheme, custom } = prefixToScheme(existingPrefix);
     setDraft({
       id: p.id,
       name: p.name,
@@ -54,7 +78,8 @@ export default function ApiProvidersSettings() {
       authType: p.auth.type,
       param: p.auth.type === 'query' ? p.auth.param : '',
       headerName: p.auth.type === 'header' ? p.auth.name : '',
-      headerPrefix: p.auth.type === 'header' ? (p.auth.prefix ?? '') : '',
+      headerScheme: scheme,
+      headerCustomPrefix: custom,
       value: '',
       editing: true
     });
@@ -79,10 +104,11 @@ export default function ApiProvidersSettings() {
       auth = { type: 'query', param: draft.param.trim() };
     } else {
       if (!draft.headerName.trim()) { setError('header name is required'); return; }
+      const prefix = schemeToPrefix(draft.headerScheme, draft.headerCustomPrefix);
       auth = {
         type: 'header',
         name: draft.headerName.trim(),
-        ...(draft.headerPrefix ? { prefix: draft.headerPrefix } : {})
+        ...(prefix !== undefined ? { prefix } : {})
       };
     }
     if (!draft.editing && !draft.value) { setError('value is required'); return; }
@@ -139,10 +165,23 @@ export default function ApiProvidersSettings() {
                   onChange={(e) => setDraft({ ...draft, headerName: e.target.value })} />
               </label>
               <label style={FIELD}>
-                <span style={{ display: 'block', fontSize: 12, opacity: 0.7, marginBottom: 4 }}>Prefix (optional, e.g. "Bearer ")</span>
-                <input style={INPUT} value={draft.headerPrefix}
-                  onChange={(e) => setDraft({ ...draft, headerPrefix: e.target.value })} />
+                <span style={{ display: 'block', fontSize: 12, opacity: 0.7, marginBottom: 4 }}>Scheme</span>
+                <select style={INPUT} value={draft.headerScheme}
+                  onChange={(e) => setDraft({ ...draft, headerScheme: e.target.value as HeaderScheme })}>
+                  <option value="none">None</option>
+                  <option value="bearer">Bearer</option>
+                  <option value="basic">Basic</option>
+                  <option value="token">Token</option>
+                  <option value="custom">Custom</option>
+                </select>
               </label>
+              {draft.headerScheme === 'custom' && (
+                <label style={FIELD}>
+                  <span style={{ display: 'block', fontSize: 12, opacity: 0.7, marginBottom: 4 }}>Custom prefix (include any trailing space)</span>
+                  <input style={INPUT} value={draft.headerCustomPrefix}
+                    onChange={(e) => setDraft({ ...draft, headerCustomPrefix: e.target.value })} />
+                </label>
+              )}
             </>
           )}
           <label style={FIELD}>

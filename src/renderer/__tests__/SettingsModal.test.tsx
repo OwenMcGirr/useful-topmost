@@ -91,7 +91,59 @@ describe('SettingsModal', () => {
 
     expect(screen.queryByLabelText(/param/i)).toBeNull();
     expect(screen.getByLabelText(/header name/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/prefix/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^scheme$/i)).toBeInTheDocument();
+  });
+
+  it('selecting Bearer scheme saves prefix "Bearer " with trailing space', async () => {
+    const { api } = mockApi([]);
+    (window as any).api = api;
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /add provider/i }));
+    await userEvent.type(screen.getByLabelText(/^name$/i), 'Auth Provider');
+    await userEvent.type(screen.getByLabelText(/hostnames/i), 'api.example.com');
+    await userEvent.selectOptions(screen.getByLabelText(/auth type/i), 'header');
+    await userEvent.type(screen.getByLabelText(/header name/i), 'Authorization');
+    await userEvent.selectOptions(screen.getByLabelText(/^scheme$/i), 'bearer');
+    await userEvent.type(screen.getByLabelText(/^value$/i), 'TOKEN');
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(api.secrets.save).toHaveBeenCalled());
+    const arg = api.secrets.save.mock.calls[0][0];
+    expect(arg.auth).toEqual({ type: 'header', name: 'Authorization', prefix: 'Bearer ' });
+  });
+
+  it('None scheme omits the prefix field on save', async () => {
+    const { api } = mockApi([]);
+    (window as any).api = api;
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /add provider/i }));
+    await userEvent.type(screen.getByLabelText(/^name$/i), 'Auth Provider');
+    await userEvent.type(screen.getByLabelText(/hostnames/i), 'api.example.com');
+    await userEvent.selectOptions(screen.getByLabelText(/auth type/i), 'header');
+    await userEvent.type(screen.getByLabelText(/header name/i), 'X-API-Key');
+    await userEvent.type(screen.getByLabelText(/^value$/i), 'KEY');
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(api.secrets.save).toHaveBeenCalled());
+    const arg = api.secrets.save.mock.calls[0][0];
+    expect(arg.auth).toEqual({ type: 'header', name: 'X-API-Key' });
+  });
+
+  it('editing a header provider with "Bearer " prefix selects the Bearer scheme', async () => {
+    const { api } = mockApi([{
+      id: 'p1', name: 'Auth Provider',
+      hostnames: ['api.example.com'],
+      auth: { type: 'header', name: 'Authorization', prefix: 'Bearer ' },
+      value: 'TOKEN'
+    }]);
+    (window as any).api = api;
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /edit/i }));
+
+    expect((screen.getByLabelText(/^scheme$/i) as HTMLSelectElement).value).toBe('bearer');
   });
 
   it('Save with empty name shows inline error and does NOT call save', async () => {
