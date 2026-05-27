@@ -117,6 +117,41 @@ describe('Tile', () => {
     expect(onTogglePinned).toHaveBeenCalled();
   });
 
+  it('renders a pinned indicator badge only when pinned', () => {
+    const { container, rerender } = render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'live' }}
+        htmlUrl="file:///x"
+        widgetPreloadUrl=""
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onRetry={() => {}}
+      />
+    );
+    expect(container.querySelector('[data-pin-indicator]')).toBeNull();
+
+    rerender(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'live' }}
+        htmlUrl="file:///x"
+        widgetPreloadUrl=""
+        pinned
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onRetry={() => {}}
+      />
+    );
+    expect(container.querySelector('[data-pin-indicator]')).not.toBeNull();
+  });
+
   it('shows unpin for pinned tiles and calls onTogglePinned', async () => {
     const onTogglePinned = vi.fn();
     render(

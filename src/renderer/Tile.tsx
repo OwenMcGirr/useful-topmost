@@ -21,6 +21,13 @@ const TILE: React.CSSProperties = {
   borderRadius: 6, overflow: 'hidden'
 };
 
+const PIN_BADGE: React.CSSProperties = {
+  position: 'absolute', top: 8, left: 8,
+  width: 8, height: 8, borderRadius: '50%',
+  background: '#58a6ff', boxShadow: '0 0 6px rgba(88,166,255,0.6)',
+  zIndex: 5, pointerEvents: 'none'
+};
+
 const CHROME: React.CSSProperties = {
   position: 'absolute', top: 0, left: 0, right: 0,
   padding: '4px 8px', display: 'flex', gap: 4, justifyContent: 'flex-end',
@@ -54,6 +61,7 @@ export default function Tile(props: Props) {
         if (chrome) chrome.style.opacity = '0';
       }}
     >
+      {props.pinned === true && <div data-pin-indicator aria-label="pinned" style={PIN_BADGE} />}
       <div data-chrome style={CHROME}>
         <button style={BTN} onClick={props.onTogglePinned}>
           {props.pinned === true ? 'unpin' : 'pin'}
