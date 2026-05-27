@@ -15,6 +15,8 @@ import {
   pickVisibleDashboardTiles
 } from './dashboard-grid';
 
+type TileSize = 'small' | 'wide' | 'large';
+
 interface TileEntry {
   uuid: string;
   prompt: string;
@@ -22,6 +24,21 @@ interface TileEntry {
   htmlUrl: string;
   revision?: number;
   pinned?: boolean;
+  size?: TileSize;
+}
+
+const SIZE_CYCLE: Record<TileSize, TileSize> = {
+  small: 'wide',
+  wide: 'large',
+  large: 'small'
+};
+
+function gridSpan(size: TileSize | undefined): React.CSSProperties {
+  switch (size) {
+    case 'wide': return { gridColumn: 'span 2' };
+    case 'large': return { gridColumn: 'span 2', gridRow: 'span 2' };
+    default: return {};
+  }
 }
 
 type ChatState =
@@ -192,7 +209,8 @@ export default function Dashboard() {
         state: { kind: 'live' as const },
         htmlUrl: await window.api.htmlUrl(w.uuid),
         revision: 0,
-        pinned: w.pinned === true
+        pinned: w.pinned === true,
+        size: w.size
       })));
       setTiles(entries);
     })();
@@ -271,6 +289,21 @@ export default function Dashboard() {
     setChat({ open: true, mode: 'create', initialMessage: prompt });
   }, [dismissOnboarding]);
 
+  const handleCycleSize = useCallback(async (uuid: string) => {
+    const tile = tiles.find((t) => t.uuid === uuid);
+    if (!tile) return;
+
+    const previousSize: TileSize = tile.size ?? 'small';
+    const nextSize: TileSize = SIZE_CYCLE[previousSize];
+    setTiles((prev) => prev.map((t) => t.uuid === uuid ? { ...t, size: nextSize } : t));
+
+    try {
+      await window.api.setWidgetSize(uuid, nextSize);
+    } catch {
+      setTiles((prev) => prev.map((t) => t.uuid === uuid ? { ...t, size: previousSize } : t));
+    }
+  }, [tiles]);
+
   const handleTogglePinned = useCallback(async (uuid: string) => {
     const tile = tiles.find((t) => t.uuid === uuid);
     if (!tile) return;
@@ -340,6 +373,7 @@ export default function Dashboard() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.96 }}
               transition={{ duration: 0.18 }}
+              style={gridSpan(t.size)}
             >
               <Tile
                 uuid={t.uuid}
@@ -348,10 +382,12 @@ export default function Dashboard() {
                 htmlUrl={t.htmlUrl}
                 widgetPreloadUrl={widgetPreload}
                 pinned={t.pinned}
+                size={t.size}
                 onRefresh={() => {}}
                 onDismiss={() => handleDelete(t.uuid)}
                 onEditChat={() => handleEditChat(t)}
                 onTogglePinned={() => handleTogglePinned(t.uuid)}
+                onCycleSize={() => handleCycleSize(t.uuid)}
                 onRetry={() => handleRetry(t.uuid)}
               />
             </motion.div>

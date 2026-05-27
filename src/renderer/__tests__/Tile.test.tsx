@@ -16,6 +16,7 @@ describe('Tile', () => {
         onDismiss={() => {}}
         onEditChat={() => {}}
         onTogglePinned={() => {}}
+        onCycleSize={() => {}}
         onRetry={() => {}}
       />
     );
@@ -34,6 +35,7 @@ describe('Tile', () => {
         onDismiss={() => {}}
         onEditChat={() => {}}
         onTogglePinned={() => {}}
+        onCycleSize={() => {}}
         onRetry={() => {}}
       />
     );
@@ -113,6 +115,7 @@ describe('Tile', () => {
         onDismiss={onDismiss}
         onEditChat={() => {}}
         onTogglePinned={() => {}}
+        onCycleSize={() => {}}
         onRetry={() => {}}
       />
     );
@@ -148,6 +151,46 @@ describe('Tile', () => {
     expect(onTogglePinned).toHaveBeenCalled();
   });
 
+  it('size button shows the current size and cycles via onCycleSize', async () => {
+    const onCycleSize = vi.fn();
+    const { rerender } = render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'live' }}
+        htmlUrl="file:///x"
+        widgetPreloadUrl=""
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={onCycleSize}
+        onRetry={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /size 1×1/i }));
+    expect(onCycleSize).toHaveBeenCalled();
+
+    rerender(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'live' }}
+        htmlUrl="file:///x"
+        widgetPreloadUrl=""
+        size="large"
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={onCycleSize}
+        onRetry={() => {}}
+      />
+    );
+    expect(screen.getByRole('button', { name: /size 2×2/i })).toBeInTheDocument();
+  });
+
   it('renders a pinned indicator badge only when pinned', () => {
     const { container, rerender } = render(
       <Tile
@@ -160,6 +203,7 @@ describe('Tile', () => {
         onDismiss={() => {}}
         onEditChat={() => {}}
         onTogglePinned={() => {}}
+        onCycleSize={() => {}}
         onRetry={() => {}}
       />
     );
@@ -177,6 +221,7 @@ describe('Tile', () => {
         onDismiss={() => {}}
         onEditChat={() => {}}
         onTogglePinned={() => {}}
+        onCycleSize={() => {}}
         onRetry={() => {}}
       />
     );

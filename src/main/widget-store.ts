@@ -2,12 +2,15 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+export type WidgetSize = 'small' | 'wide' | 'large';
+
 export interface WidgetMeta {
   prompt: string;
   created_at: string;
   codex_model?: string;
   chat?: WidgetChatMessage[];
   pinned?: boolean;
+  size?: WidgetSize;
 }
 
 export interface Widget {
@@ -15,6 +18,7 @@ export interface Widget {
   prompt: string;
   created_at: string;
   pinned?: boolean;
+  size?: WidgetSize;
 }
 
 export type WidgetChatRole = 'user' | 'status';
@@ -40,6 +44,7 @@ export interface WidgetStore {
   replaceChatMessage(uuid: string, messageId: string, message: WidgetChatMessage): Promise<void>;
   updatePrompt(uuid: string, prompt: string): Promise<void>;
   setPinned(uuid: string, pinned: boolean): Promise<void>;
+  setSize(uuid: string, size: WidgetSize): Promise<void>;
   replaceWidgetHtml(uuid: string, html: string): Promise<void>;
   readWidgetHtml(uuid: string): Promise<string | null>;
   widgetsRoot(): string;
@@ -113,7 +118,8 @@ export function createWidgetStore(root: string): WidgetStore {
             uuid,
             prompt: meta.prompt,
             created_at: meta.created_at,
-            pinned: meta.pinned === true
+            pinned: meta.pinned === true,
+            size: meta.size
           });
         } catch {
           // Skip a widget whose meta.json was deleted out-of-band.
@@ -158,6 +164,11 @@ export function createWidgetStore(root: string): WidgetStore {
     async setPinned(uuid, pinned) {
       const meta = await readMeta(uuid);
       await writeMeta(uuid, { ...meta, pinned });
+    },
+
+    async setSize(uuid, size) {
+      const meta = await readMeta(uuid);
+      await writeMeta(uuid, { ...meta, size });
     },
 
     async replaceWidgetHtml(uuid, html) {

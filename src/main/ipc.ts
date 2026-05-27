@@ -206,6 +206,14 @@ export function registerIpc(
     return { ok: true };
   });
 
+  ipcMain.handle('widget:setSize', async (_event, uuid: string, size: string) => {
+    if (size !== 'small' && size !== 'wide' && size !== 'large') {
+      return { ok: false as const, error: 'size must be one of: small, wide, large' };
+    }
+    await widgets.setSize(uuid, size);
+    return { ok: true as const };
+  });
+
   ipcMain.handle('widget:list', async () => widgets.list());
 
   ipcMain.handle('widget:getMeta', async (_event, uuid: string) => widgets.getMeta(uuid));
