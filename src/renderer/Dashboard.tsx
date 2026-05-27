@@ -314,10 +314,10 @@ export default function Dashboard() {
         </AnimatePresence>
       </div>
       {showShuffle && (
-        <button aria-label="shuffle widgets" style={SHUFFLE_BUTTON} onClick={shuffleVisibleTiles}>shuffle</button>
+        <button aria-label="shuffle widgets" title="Shuffle visible widgets" style={SHUFFLE_BUTTON} onClick={shuffleVisibleTiles}>shuffle</button>
       )}
-      <button aria-label="settings" style={GEAR_BUTTON} onClick={() => setSettingsOpen(true)}>⚙</button>
-      <button style={PLUS_BUTTON} onClick={() => setChat({ open: true, mode: 'create' })}>+</button>
+      <button aria-label="settings" title="Settings" style={GEAR_BUTTON} onClick={() => setSettingsOpen(true)}>⚙</button>
+      <button aria-label="new widget" title="New widget" style={PLUS_BUTTON} onClick={() => setChat({ open: true, mode: 'create' })}>+</button>
       <WidgetChatPanel
         open={chat.open}
         mode={chat.open ? chat.mode : 'create'}
