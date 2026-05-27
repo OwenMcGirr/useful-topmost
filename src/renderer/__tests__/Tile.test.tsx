@@ -15,6 +15,7 @@ describe('Tile', () => {
         onRefresh={() => {}}
         onDismiss={() => {}}
         onEditChat={() => {}}
+        onTogglePinned={() => {}}
         onRetry={() => {}}
       />
     );
@@ -32,6 +33,7 @@ describe('Tile', () => {
         onRefresh={() => {}}
         onDismiss={() => {}}
         onEditChat={() => {}}
+        onTogglePinned={() => {}}
         onRetry={() => {}}
       />
     );
@@ -53,6 +55,7 @@ describe('Tile', () => {
         onRefresh={() => {}}
         onDismiss={onDismiss}
         onEditChat={() => {}}
+        onTogglePinned={() => {}}
         onRetry={onRetry}
       />
     );
@@ -67,6 +70,7 @@ describe('Tile', () => {
     const onRefresh = vi.fn();
     const onDismiss = vi.fn();
     const onEditChat = vi.fn();
+    const onTogglePinned = vi.fn();
     render(
       <Tile
         uuid="u1"
@@ -77,14 +81,62 @@ describe('Tile', () => {
         onRefresh={onRefresh}
         onDismiss={onDismiss}
         onEditChat={onEditChat}
+        onTogglePinned={onTogglePinned}
         onRetry={() => {}}
       />
     );
+    await userEvent.click(screen.getByRole('button', { name: 'pin' }));
     await userEvent.click(screen.getByRole('button', { name: /refresh/i }));
     await userEvent.click(screen.getByRole('button', { name: 'edit with chat' }));
     await userEvent.click(screen.getByRole('button', { name: /dismiss/i }));
     expect(onRefresh).toHaveBeenCalled();
     expect(onEditChat).toHaveBeenCalled();
+    expect(onTogglePinned).toHaveBeenCalled();
     expect(onDismiss).toHaveBeenCalled();
+  });
+
+  it('shows pin for unpinned tiles and calls onTogglePinned', async () => {
+    const onTogglePinned = vi.fn();
+    render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'building' }}
+        htmlUrl=""
+        widgetPreloadUrl=""
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={onTogglePinned}
+        onRetry={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'pin' }));
+
+    expect(onTogglePinned).toHaveBeenCalled();
+  });
+
+  it('shows unpin for pinned tiles and calls onTogglePinned', async () => {
+    const onTogglePinned = vi.fn();
+    render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'building' }}
+        htmlUrl=""
+        widgetPreloadUrl=""
+        pinned
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={onTogglePinned}
+        onRetry={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'unpin' }));
+
+    expect(onTogglePinned).toHaveBeenCalled();
   });
 });

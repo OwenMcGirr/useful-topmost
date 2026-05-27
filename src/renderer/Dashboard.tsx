@@ -12,7 +12,7 @@ import {
   SHUFFLE_INTERVAL_MS,
   TILE_GAP,
   calculateDashboardCapacity,
-  pickRandomTiles
+  pickVisibleDashboardTiles
 } from './dashboard-grid';
 
 interface TileEntry {
@@ -21,6 +21,7 @@ interface TileEntry {
   state: TileState;
   htmlUrl: string;
   revision?: number;
+  pinned?: boolean;
 }
 
 type ChatState =
@@ -93,6 +94,11 @@ export default function Dashboard() {
     overflow: 'hidden'
   }), [columns]);
 
+  const tileSelectionKey = useMemo(
+    () => tiles.map((tile) => `${tile.uuid}:${tile.pinned === true ? '1' : '0'}`).join('|'),
+    [tiles]
+  );
+
   useEffect(() => {
     void window.api.onboarding.get().then((s) => setOnboardingDismissed(s.dismissed));
   }, []);
@@ -140,7 +146,8 @@ export default function Dashboard() {
         prompt: w.prompt,
         state: { kind: 'live' as const },
         htmlUrl: await window.api.htmlUrl(w.uuid),
-        revision: 0
+        revision: 0,
+        pinned: w.pinned === true
       })));
       setTiles(entries);
     })();
@@ -173,14 +180,23 @@ export default function Dashboard() {
   }, []);
 
   const handleRetry = useCallback(async (uuid: string) => {
+    const tile = tiles.find((t) => t.uuid === uuid);
     const meta = await window.api.getWidgetMeta(uuid);
     await window.api.deleteWidget(uuid);
     setTiles((prev) => prev.filter((t) => t.uuid !== uuid));
     const created = await window.api.chatStartWidget(meta.prompt);
+    if (tile?.pinned) {
+      await window.api.setWidgetPinned(created.uuid, true);
+    }
     setTiles((prev) => [...prev, {
-      uuid: created.uuid, prompt: meta.prompt, state: { kind: 'building' }, htmlUrl: '', revision: 0
+      uuid: created.uuid,
+      prompt: meta.prompt,
+      state: { kind: 'building' },
+      htmlUrl: '',
+      revision: 0,
+      pinned: tile?.pinned === true
     }]);
-  }, []);
+  }, [tiles]);
 
   const handleEditChat = useCallback((tile: TileEntry) => {
     setChat({
@@ -191,7 +207,7 @@ export default function Dashboard() {
   }, []);
 
   const handleChatCreated = useCallback((uuid: string, prompt: string) => {
-    setTiles((prev) => [...prev, { uuid, prompt, state: { kind: 'building' }, htmlUrl: '', revision: 0 }]);
+    setTiles((prev) => [...prev, { uuid, prompt, state: { kind: 'building' }, htmlUrl: '', revision: 0, pinned: false }]);
     setChat({ open: true, mode: 'edit', widget: { uuid, prompt } });
   }, []);
 
@@ -210,6 +226,21 @@ export default function Dashboard() {
     setChat({ open: true, mode: 'create', initialMessage: prompt });
   }, [dismissOnboarding]);
 
+  const handleTogglePinned = useCallback(async (uuid: string) => {
+    const tile = tiles.find((t) => t.uuid === uuid);
+    if (!tile) return;
+
+    const previousPinned = tile.pinned === true;
+    const nextPinned = !previousPinned;
+    setTiles((prev) => prev.map((t) => t.uuid === uuid ? { ...t, pinned: nextPinned } : t));
+
+    try {
+      await window.api.setWidgetPinned(uuid, nextPinned);
+    } catch {
+      setTiles((prev) => prev.map((t) => t.uuid === uuid ? { ...t, pinned: previousPinned } : t));
+    }
+  }, [tiles]);
+
   const shuffleVisibleTiles = useCallback(() => {
     setVisibleIds((previousIds) => {
       if (tiles.length <= capacity) return tiles.map((tile) => tile.uuid);
@@ -218,7 +249,7 @@ export default function Dashboard() {
         .map((id) => tiles.find((tile) => tile.uuid === id))
         .filter((tile): tile is TileEntry => Boolean(tile));
 
-      return pickRandomTiles(tiles, capacity, previousTiles).map((tile) => tile.uuid);
+      return pickVisibleDashboardTiles(tiles, capacity, previousTiles).map((tile) => tile.uuid);
     });
   }, [capacity, tiles]);
 
@@ -230,13 +261,9 @@ export default function Dashboard() {
         .map((id) => tiles.find((tile) => tile.uuid === id))
         .filter((tile): tile is TileEntry => Boolean(tile));
 
-      if (currentVisibleTiles.length === capacity) {
-        return currentVisibleTiles.map((tile) => tile.uuid);
-      }
-
-      return pickRandomTiles(tiles, capacity, currentVisibleTiles).map((tile) => tile.uuid);
+      return pickVisibleDashboardTiles(tiles, capacity, currentVisibleTiles).map((tile) => tile.uuid);
     });
-  }, [capacity, tiles]);
+  }, [capacity, tileSelectionKey, tiles]);
 
   useEffect(() => {
     if (tiles.length <= capacity) return;
@@ -275,9 +302,11 @@ export default function Dashboard() {
                 state={t.state}
                 htmlUrl={t.htmlUrl}
                 widgetPreloadUrl={widgetPreload}
+                pinned={t.pinned}
                 onRefresh={() => {}}
                 onDismiss={() => handleDelete(t.uuid)}
                 onEditChat={() => handleEditChat(t)}
+                onTogglePinned={() => handleTogglePinned(t.uuid)}
                 onRetry={() => handleRetry(t.uuid)}
               />
             </motion.div>

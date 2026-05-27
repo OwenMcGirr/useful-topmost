@@ -201,6 +201,11 @@ export function registerIpc(
     return { ok: true };
   });
 
+  ipcMain.handle('widget:setPinned', async (_event, uuid: string, pinned: boolean) => {
+    await widgets.setPinned(uuid, Boolean(pinned));
+    return { ok: true };
+  });
+
   ipcMain.handle('widget:list', async () => widgets.list());
 
   ipcMain.handle('widget:getMeta', async (_event, uuid: string) => widgets.getMeta(uuid));

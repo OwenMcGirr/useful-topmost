@@ -7,9 +7,11 @@ interface Props {
   state: TileState;
   htmlUrl: string;
   widgetPreloadUrl: string;
+  pinned?: boolean;
   onRefresh: () => void;
   onDismiss: () => void;
   onEditChat: () => void;
+  onTogglePinned: () => void;
   onRetry: () => void;
 }
 
@@ -53,6 +55,9 @@ export default function Tile(props: Props) {
       }}
     >
       <div data-chrome style={CHROME}>
+        <button style={BTN} onClick={props.onTogglePinned}>
+          {props.pinned === true ? 'unpin' : 'pin'}
+        </button>
         {props.state.kind === 'live' && (
           <>
             <button style={BTN} onClick={handleRefresh}>refresh</button>

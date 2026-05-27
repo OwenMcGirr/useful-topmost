@@ -13,6 +13,7 @@ export interface Widget {
   uuid: string;
   prompt: string;
   created_at: string;
+  pinned?: boolean;
 }
 
 export type WidgetChatRole = 'user' | 'status';
@@ -37,6 +38,8 @@ const api = {
   listWidgetChat: (uuid: string) =>
     ipcRenderer.invoke('widget:chatList', uuid) as Promise<WidgetChatMessage[]>,
   deleteWidget: (uuid: string) => ipcRenderer.invoke('widget:delete', uuid) as Promise<{ ok: true }>,
+  setWidgetPinned: (uuid: string, pinned: boolean) =>
+    ipcRenderer.invoke('widget:setPinned', uuid, pinned) as Promise<{ ok: true }>,
   listWidgets: () => ipcRenderer.invoke('widget:list') as Promise<Widget[]>,
   getWidgetMeta: (uuid: string) => ipcRenderer.invoke('widget:getMeta', uuid) as Promise<{ prompt: string; created_at: string }>,
   htmlUrl: (uuid: string) => ipcRenderer.invoke('widget:htmlUrl', uuid) as Promise<string>,

@@ -193,6 +193,40 @@ describe('ipc', () => {
     expect(list[0].prompt).toBe('first');
   });
 
+  it('widget:list includes pinned state from the store', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+    const uuid = await store.create('first');
+    await store.setPinned(uuid, true);
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    const list = await ipc.invoke('widget:list');
+    expect(list).toEqual([expect.objectContaining({ uuid, pinned: true })]);
+  });
+
+  it('widget:setPinned persists Boolean-coerced pinned state', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+    const uuid = await store.create('first');
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    expect(await ipc.invoke('widget:setPinned', uuid, 'yes')).toEqual({ ok: true });
+    expect((await store.getMeta(uuid)).pinned).toBe(true);
+
+    await ipc.invoke('widget:setPinned', uuid, 0);
+    expect((await store.getMeta(uuid)).pinned).toBe(false);
+  });
+
   it('widget:list does not include staging directories', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);
