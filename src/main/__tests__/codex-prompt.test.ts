@@ -16,6 +16,13 @@ describe('codex-prompt', () => {
     expect(CODEX_SYSTEM_PROMPT).toContain('do not build shell command strings');
   });
 
+  it('instructs widget creation to validate before implementation', () => {
+    expect(CODEX_SYSTEM_PROMPT).toContain('Before implementation:');
+    expect(CODEX_SYSTEM_PROMPT).toContain('Test or validate the intended data source');
+    expect(CODEX_SYSTEM_PROMPT).toContain('before writing the final widget');
+    expect(CODEX_SYSTEM_PROMPT).toContain('Do not include your validation notes in the widget UI');
+  });
+
   it('buildPrompt appends the user prompt after the system prompt', () => {
     const out = buildPrompt('show the weather');
     expect(out.startsWith(CODEX_SYSTEM_PROMPT)).toBe(true);
