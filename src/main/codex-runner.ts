@@ -16,6 +16,12 @@ export interface CodexRunOptions {
   signal?: AbortSignal;
   /** Filename Codex is expected to write inside cwd. Defaults to index.html. */
   outputFile?: string;
+  /**
+   * When true, ask the Codex CLI itself to capture the agent's last message into
+   * `<cwd>/<outputFile>` via `--output-last-message`. The runner then waits for
+   * the child to exit instead of relying on the agent writing the file mid-run.
+   */
+  captureLastMessage?: boolean;
   /** Injected for testing */
   spawnFn?: typeof nodeSpawn;
 }
@@ -24,7 +30,7 @@ export const DEFAULT_CODEX_TIMEOUT_MS = 600_000;
 const POLL_INTERVAL_MS = 500;
 
 export async function runCodex(opts: CodexRunOptions): Promise<CodexRunResult> {
-  const { prompt, cwd, timeoutMs = DEFAULT_CODEX_TIMEOUT_MS, logPath, signal, outputFile = 'index.html', spawnFn = nodeSpawn } = opts;
+  const { prompt, cwd, timeoutMs = DEFAULT_CODEX_TIMEOUT_MS, logPath, signal, outputFile = 'index.html', captureLastMessage = false, spawnFn = nodeSpawn } = opts;
   const outputPath = path.join(cwd, outputFile);
 
   return new Promise<CodexRunResult>((resolve) => {
@@ -38,6 +44,7 @@ export async function runCodex(opts: CodexRunOptions): Promise<CodexRunResult> {
       '--dangerously-bypass-approvals-and-sandbox',
       '--enable', 'browser_use',
       '--enable', 'shell_tool',
+      ...(captureLastMessage ? ['--output-last-message', outputPath] : []),
       '-'
     ];
     // shell: true lets Windows find codex.cmd (npm-global shims aren't .exe).

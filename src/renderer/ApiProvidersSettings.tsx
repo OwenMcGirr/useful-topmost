@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { PublicProvider, Provider, AuthStrategy } from '../main/secrets-store';
 import { BTN, BTN_DANGER, BTN_PRIMARY, FIELD, INPUT, ROW } from './settingsStyles';
 
@@ -137,6 +137,23 @@ export default function ApiProvidersSettings() {
   const [lookupBusy, setLookupBusy] = useState(false);
   const [lookupError, setLookupError] = useState('');
   const [lookupSource, setLookupSource] = useState('');
+  const [lookupElapsed, setLookupElapsed] = useState(0);
+  const lookupStart = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!lookupBusy) {
+      lookupStart.current = null;
+      setLookupElapsed(0);
+      return;
+    }
+    lookupStart.current = Date.now();
+    setLookupElapsed(0);
+    const interval = window.setInterval(() => {
+      const start = lookupStart.current;
+      if (start) setLookupElapsed(Math.floor((Date.now() - start) / 1000));
+    }, 500);
+    return () => window.clearInterval(interval);
+  }, [lookupBusy]);
 
   const refresh = async () => {
     setProviders(await window.api.secrets.list());
@@ -184,6 +201,10 @@ export default function ApiProvidersSettings() {
     } finally {
       setLookupBusy(false);
     }
+  };
+
+  const handleLookupCancel = async () => {
+    await window.api.secrets.cancelLookup();
   };
 
   const startEdit = (p: PublicProvider) => {
@@ -282,14 +303,29 @@ export default function ApiProvidersSettings() {
                     }
                   }}
                 />
-                <button
-                  style={{ ...BTN_PRIMARY, whiteSpace: 'nowrap', opacity: lookupBusy || !lookupQuery.trim() ? 0.5 : 1 }}
-                  disabled={lookupBusy || !lookupQuery.trim()}
-                  onClick={() => void handleLookup()}
-                >
-                  {lookupBusy ? <span className="spinner" aria-hidden /> : 'Search'}
-                </button>
+                {lookupBusy ? (
+                  <button
+                    style={{ ...BTN, whiteSpace: 'nowrap' }}
+                    onClick={() => void handleLookupCancel()}
+                  >
+                    Cancel
+                  </button>
+                ) : (
+                  <button
+                    style={{ ...BTN_PRIMARY, whiteSpace: 'nowrap', opacity: !lookupQuery.trim() ? 0.5 : 1 }}
+                    disabled={!lookupQuery.trim()}
+                    onClick={() => void handleLookup()}
+                  >
+                    Search
+                  </button>
+                )}
               </div>
+              {lookupBusy && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#8b949e', fontSize: 12, marginTop: 6 }}>
+                  <span className="spinner" aria-hidden />
+                  <span>searching the official docs… {lookupElapsed}s</span>
+                </div>
+              )}
               {lookupError && <div style={{ color: '#f85149', fontSize: 12, marginTop: 6 }}>{lookupError}</div>}
               {lookupSource && (
                 <div style={{ color: '#3fb950', fontSize: 12, marginTop: 6 }}>

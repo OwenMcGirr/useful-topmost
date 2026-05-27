@@ -103,6 +103,31 @@ describe('runCodex', () => {
     expect(log).toContain('hello log');
   });
 
+  it('captureLastMessage adds --output-last-message <path> to the codex args', async () => {
+    const cwd = await tempDir();
+    const child = fakeChild();
+    const spawnFn = vi.fn(() => {
+      queueMicrotask(async () => {
+        await fs.writeFile(path.join(cwd, 'provider.json'), '{"ok":true}');
+        child.emit('exit', 0);
+      });
+      return child;
+    });
+
+    const result = await runCodex({
+      prompt: 'p', cwd,
+      outputFile: 'provider.json',
+      captureLastMessage: true,
+      spawnFn: spawnFn as any,
+      timeoutMs: 1000
+    });
+
+    expect(result.ok).toBe(true);
+    const [, args] = spawnFn.mock.calls[0] as unknown as [string, string[]];
+    expect(args).toContain('--output-last-message');
+    expect(args).toContain(path.join(cwd, 'provider.json'));
+  });
+
   it('writes the prompt to stdin (not argv) so cmd.exe never sees user text', async () => {
     const cwd = await tempDir();
     const child = fakeChild();
