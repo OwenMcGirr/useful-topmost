@@ -26,6 +26,7 @@ interface TileEntry {
   revision?: number;
   pinned?: boolean;
   size?: TileSize;
+  selectedProviderIds?: string[];
 }
 
 const SIZE_CYCLE: Record<TileSize, TileSize> = {
@@ -45,7 +46,7 @@ function gridSpan(size: TileSize | undefined): React.CSSProperties {
 type ChatState =
   | { open: false }
   | { open: true; mode: 'create'; initialMessage?: string }
-  | { open: true; mode: 'edit'; widget: { uuid: string; prompt: string; htmlUrl?: string }; initialMessage?: string };
+  | { open: true; mode: 'edit'; widget: { uuid: string; prompt: string; htmlUrl?: string; selectedProviderIds?: string[] }; initialMessage?: string };
 
 const PLUS_BUTTON: React.CSSProperties = {
   position: 'fixed', bottom: 32, right: 32,
@@ -226,7 +227,8 @@ export default function Dashboard() {
         htmlUrl: await window.api.htmlUrl(w.uuid),
         revision: 0,
         pinned: w.pinned === true,
-        size: w.size
+        size: w.size,
+        selectedProviderIds: w.selectedProviderIds
       })));
       setTiles(entries);
     })();
@@ -266,10 +268,11 @@ export default function Dashboard() {
 
   const handleRetry = useCallback(async (uuid: string) => {
     const tile = tiles.find((t) => t.uuid === uuid);
+    const previousSelection = tile?.selectedProviderIds;
     const meta = await window.api.getWidgetMeta(uuid);
     await window.api.deleteWidget(uuid);
     setTiles((prev) => prev.filter((t) => t.uuid !== uuid));
-    const created = await window.api.chatStartWidget(meta.prompt);
+    const created = await window.api.chatStartWidget(meta.prompt, previousSelection);
     if (tile?.pinned) {
       await window.api.setWidgetPinned(created.uuid, true);
     }
@@ -279,7 +282,8 @@ export default function Dashboard() {
       state: { kind: 'building' },
       htmlUrl: '',
       revision: 0,
-      pinned: tile?.pinned === true
+      pinned: tile?.pinned === true,
+      selectedProviderIds: previousSelection
     }]);
   }, [tiles]);
 
@@ -287,13 +291,21 @@ export default function Dashboard() {
     setChat({
       open: true,
       mode: 'edit',
-      widget: { uuid: tile.uuid, prompt: tile.prompt, htmlUrl: tile.htmlUrl }
+      widget: {
+        uuid: tile.uuid,
+        prompt: tile.prompt,
+        htmlUrl: tile.htmlUrl,
+        selectedProviderIds: tile.selectedProviderIds
+      }
     });
   }, []);
 
-  const handleChatCreated = useCallback((uuid: string, prompt: string) => {
-    setTiles((prev) => [...prev, { uuid, prompt, state: { kind: 'building' }, htmlUrl: '', revision: 0, pinned: false }]);
-    setChat({ open: true, mode: 'edit', widget: { uuid, prompt } });
+  const handleChatCreated = useCallback((uuid: string, prompt: string, selectedProviderIds: string[] | undefined) => {
+    setTiles((prev) => [...prev, {
+      uuid, prompt, state: { kind: 'building' }, htmlUrl: '', revision: 0, pinned: false,
+      selectedProviderIds
+    }]);
+    setChat({ open: true, mode: 'edit', widget: { uuid, prompt, selectedProviderIds } });
   }, []);
 
   const handleChatSent = useCallback((uuid: string, prompt: string) => {

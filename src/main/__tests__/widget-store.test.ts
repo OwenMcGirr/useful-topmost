@@ -143,6 +143,25 @@ describe('widget-store', () => {
     expect((await store.list())[0].size).toBe('large');
   });
 
+  it('sets and clears selectedProviderIds, surfacing them in list()', async () => {
+    const root = await freshRoot();
+    const store = createWidgetStore(root);
+    const uuid = await store.create('p');
+
+    expect((await store.list())[0].selectedProviderIds).toBeUndefined();
+
+    await store.setProviders(uuid, ['p1', 'p2']);
+    expect((await store.getMeta(uuid)).selectedProviderIds).toEqual(['p1', 'p2']);
+    expect((await store.list())[0].selectedProviderIds).toEqual(['p1', 'p2']);
+
+    await store.setProviders(uuid, []);
+    expect((await store.getMeta(uuid)).selectedProviderIds).toEqual([]);
+
+    await store.setProviders(uuid, undefined);
+    expect((await store.getMeta(uuid)).selectedProviderIds).toBeUndefined();
+    expect((await store.list())[0].selectedProviderIds).toBeUndefined();
+  });
+
   it('reads and replaces widget HTML', async () => {
     const root = await freshRoot();
     const store = createWidgetStore(root);

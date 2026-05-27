@@ -34,14 +34,21 @@ function headersToObject(h: Headers): Record<string, string> {
   return out;
 }
 
+export function filterProviders<T extends { id: string }>(providers: T[], selectedIds: string[] | undefined): T[] {
+  if (selectedIds === undefined) return providers;
+  const allowed = new Set(selectedIds);
+  return providers.filter((p) => allowed.has(p.id));
+}
+
 export async function appFetch(
   store: SecretsStore,
   url: string,
-  init: RequestInit = {}
+  init: RequestInit = {},
+  selectedProviderIds?: string[]
 ): Promise<FetchEnvelope> {
   try {
     const host = new URL(url).host;
-    const providers = await store.listForProxy();
+    const providers = filterProviders(await store.listForProxy(), selectedProviderIds);
     const provider = findProvider(providers, host);
 
     const { url: nextUrl, init: nextInit } = provider

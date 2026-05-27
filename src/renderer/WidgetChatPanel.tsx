@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { WidgetChatMessage } from '../preload';
+import type { PublicProvider } from '../main/secrets-store';
 
 interface WidgetChatPanelProps {
   open: boolean;
@@ -8,11 +9,12 @@ interface WidgetChatPanelProps {
     uuid: string;
     prompt: string;
     htmlUrl?: string;
+    selectedProviderIds?: string[];
   };
   initialMessage?: string;
   widgetPreloadUrl: string;
   onClose: () => void;
-  onCreated: (uuid: string, prompt: string) => void;
+  onCreated: (uuid: string, prompt: string, selectedProviderIds: string[] | undefined) => void;
   onSent: (uuid: string, prompt: string) => void;
 }
 
@@ -61,6 +63,12 @@ const TRANSCRIPT: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 10
+};
+
+const PROVIDERS_BOX: React.CSSProperties = {
+  padding: '10px 16px',
+  borderTop: '1px solid #21262d',
+  background: '#0d1117'
 };
 
 const COMPOSER: React.CSSProperties = {
@@ -128,6 +136,8 @@ export default function WidgetChatPanel({
   const [previewUrl, setPreviewUrl] = useState<string>(cacheBust(widget?.htmlUrl));
   const [submitting, setSubmitting] = useState(false);
   const [building, setBuilding] = useState(false);
+  const [providers, setProviders] = useState<PublicProvider[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const title = mode === 'create' && !currentUuid ? 'New widget' : 'Edit widget';
   const canSend = value.trim().length > 0 && !submitting && !building;
@@ -151,6 +161,21 @@ export default function WidgetChatPanel({
   }, [open, initialMessage, widget?.uuid, widget?.htmlUrl]);
 
   useEffect(() => {
+    if (!open) return;
+    void (async () => {
+      const list = await window.api.secrets.list();
+      setProviders(list);
+      // Edit mode: seed from widget. Create mode: default to all checked.
+      const existing = widget?.selectedProviderIds;
+      if (existing !== undefined) {
+        setSelectedIds(new Set(existing.filter((id) => list.some((p) => p.id === id))));
+      } else {
+        setSelectedIds(new Set(list.map((p) => p.id)));
+      }
+    })();
+  }, [open, widget?.uuid]);
+
+  useEffect(() => {
     if (!open || !currentUuid) return;
     const offReady = window.api.onWidgetReady(async (uuid) => {
       if (uuid !== currentUuid) return;
@@ -172,6 +197,37 @@ export default function WidgetChatPanel({
 
   const displayMessages = useMemo(() => messages, [messages]);
 
+  const persistSelection = (next: Set<string>) => {
+    if (!currentUuid) return;
+    void window.api.setWidgetProviders(currentUuid, Array.from(next));
+  };
+
+  const toggleProvider = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      persistSelection(next);
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    setSelectedIds(() => {
+      const next = new Set(providers.map((p) => p.id));
+      persistSelection(next);
+      return next;
+    });
+  };
+
+  const selectNone = () => {
+    setSelectedIds(() => {
+      const next = new Set<string>();
+      persistSelection(next);
+      return next;
+    });
+  };
+
   if (!open) return null;
 
   const send = async () => {
@@ -188,9 +244,10 @@ export default function WidgetChatPanel({
 
     try {
       if (!currentUuid) {
-        const { uuid } = await window.api.chatStartWidget(trimmed);
+        const ids = Array.from(selectedIds);
+        const { uuid } = await window.api.chatStartWidget(trimmed, ids);
         setCurrentUuid(uuid);
-        onCreated(uuid, trimmed);
+        onCreated(uuid, trimmed, ids);
       } else {
         const result = await window.api.chatSendWidget(currentUuid, trimmed);
         if (!result.ok) {
@@ -249,6 +306,39 @@ export default function WidgetChatPanel({
               {m.text}
             </div>
           ))
+        )}
+      </div>
+
+      <div style={PROVIDERS_BOX} aria-label="Provider selection">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <span style={{ fontSize: 12, color: '#8b949e' }}>
+            Providers this widget may use ({selectedIds.size}/{providers.length})
+          </span>
+          {providers.length > 0 && (
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button style={{ ...BTN, fontSize: 11, padding: '3px 8px' }} onClick={selectAll}>all</button>
+              <button style={{ ...BTN, fontSize: 11, padding: '3px 8px' }} onClick={selectNone}>none</button>
+            </div>
+          )}
+        </div>
+        {providers.length === 0 ? (
+          <div style={{ fontSize: 12, color: '#8b949e' }}>
+            No providers configured. Add one in Settings to allow this widget to use authenticated APIs.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 120, overflowY: 'auto' }}>
+            {providers.map((p) => (
+              <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(p.id)}
+                  onChange={() => toggleProvider(p.id)}
+                  aria-label={`allow ${p.name}`}
+                />
+                <span>{p.name}</span>
+              </label>
+            ))}
+          </div>
         )}
       </div>
 
