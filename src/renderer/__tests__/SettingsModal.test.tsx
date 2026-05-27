@@ -161,5 +161,27 @@ describe('SettingsModal', () => {
     await userEvent.click(screen.getByRole('button', { name: /check for updates/i }));
 
     expect(onCheckUpdates).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: /restart to update/i })).toBeNull();
+  });
+
+  it('shows restart action for downloaded updates and calls the supplied restart handler', async () => {
+    const { api } = mockApi([]);
+    const onRestartUpdate = vi.fn();
+    (window as any).api = api;
+    render(
+      <SettingsModal
+        open={true}
+        onClose={() => {}}
+        updateState={{ status: 'downloaded', version: '2026.1.0-alpha.10' }}
+        onRestartUpdate={onRestartUpdate}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /^updates$/i }));
+
+    expect(screen.getByText('Update 2026.1.0-alpha.10 ready')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /restart to update/i }));
+
+    expect(onRestartUpdate).toHaveBeenCalledTimes(1);
   });
 });

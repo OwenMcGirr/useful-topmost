@@ -11,6 +11,7 @@ interface Props {
   onClose: () => void;
   updateState?: UpdateState;
   onCheckUpdates?: () => void;
+  onRestartUpdate?: () => void;
 }
 
 const OVERLAY: React.CSSProperties = {
@@ -81,7 +82,8 @@ export default function SettingsModal({
   open,
   onClose,
   updateState = { status: 'idle' },
-  onCheckUpdates = () => {}
+  onCheckUpdates = () => {},
+  onRestartUpdate = () => {}
 }: Props) {
   const [section, setSection] = useState<Section>('providers');
 
@@ -115,7 +117,11 @@ export default function SettingsModal({
             {section === 'providers' ? (
               <ApiProvidersSettings />
             ) : (
-              <UpdateSettings updateState={updateState} onCheckUpdates={onCheckUpdates} />
+              <UpdateSettings
+                updateState={updateState}
+                onCheckUpdates={onCheckUpdates}
+                onRestartUpdate={onRestartUpdate}
+              />
             )}
           </div>
         </div>
