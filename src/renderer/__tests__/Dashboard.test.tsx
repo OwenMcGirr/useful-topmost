@@ -478,6 +478,44 @@ describe('Dashboard', () => {
     expect(input.value).toBe(chipText);
   });
 
+  it('pressing N opens the new-widget chat', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    (window as any).api = m.api;
+
+    render(<Dashboard />);
+    await screen.findByText(/no widgets yet/i);
+
+    await userEvent.keyboard('n');
+
+    expect(await screen.findByLabelText(/widget message/i)).toBeInTheDocument();
+  });
+
+  it('pressing Escape closes the open chat panel', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    (window as any).api = m.api;
+
+    render(<Dashboard />);
+    await screen.findByText(/no widgets yet/i);
+
+    await userEvent.keyboard('n');
+    expect(await screen.findByLabelText(/widget message/i)).toBeInTheDocument();
+
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByLabelText(/widget message/i)).toBeNull();
+  });
+
+  it('pressing Ctrl+, opens the settings modal', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    (window as any).api = m.api;
+
+    render(<Dashboard />);
+    await screen.findByText(/no widgets yet/i);
+
+    await userEvent.keyboard('{Control>},{/Control}');
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
   it('clicking Dismiss persists and hides the overlay without opening chat', async () => {
     const m = mockApi({ onboardingDismissed: false });
     (window as any).api = m.api;

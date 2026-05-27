@@ -137,6 +137,51 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    const isTyping = () => {
+      const el = document.activeElement;
+      if (!el) return false;
+      const tag = el.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || (el as HTMLElement).isContentEditable;
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (chat.open) {
+          setChat({ open: false });
+          e.preventDefault();
+        } else if (settingsOpen) {
+          setSettingsOpen(false);
+          e.preventDefault();
+        }
+        return;
+      }
+      if (e.ctrlKey && e.key === ',') {
+        setSettingsOpen(true);
+        e.preventDefault();
+        return;
+      }
+      if (isTyping()) return;
+      if (e.key === 'n' || e.key === 'N') {
+        if (!chat.open && !settingsOpen) {
+          setChat({ open: true, mode: 'create' });
+          e.preventDefault();
+        }
+        return;
+      }
+      if (e.key === '/') {
+        if (chat.open) {
+          const textarea = document.querySelector<HTMLTextAreaElement>('aside[aria-label="Widget chat"] textarea');
+          textarea?.focus();
+          e.preventDefault();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [chat.open, settingsOpen]);
+
+  useEffect(() => {
     void (async () => {
       const url = await window.api.widgetPreloadUrl();
       setWidgetPreload(url);
