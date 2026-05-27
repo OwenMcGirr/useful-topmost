@@ -316,7 +316,7 @@ describe('Dashboard', () => {
     (window as any).api = m.api;
 
     render(<Dashboard />);
-    await userEvent.click(await screen.findByRole('button', { name: '+' }));
+    await userEvent.click(await screen.findByRole('button', { name: /new widget/i }));
     await userEvent.type(screen.getByLabelText(/widget message/i), 'show weather');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
     await userEvent.click(await screen.findByRole('button', { name: 'pin' }));
@@ -329,7 +329,7 @@ describe('Dashboard', () => {
     (window as any).api = m.api;
 
     render(<Dashboard />);
-    await userEvent.click(await screen.findByRole('button', { name: '+' }));
+    await userEvent.click(await screen.findByRole('button', { name: /new widget/i }));
     await userEvent.type(screen.getByLabelText(/widget message/i), 'p');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
     m.fireError('new-uuid', 'boom');
@@ -344,9 +344,9 @@ describe('Dashboard', () => {
     (window as any).api = m.api;
 
     render(<Dashboard />);
-    await screen.findByRole('button', { name: '+' });
+    await screen.findByRole('button', { name: /new widget/i });
 
-    await userEvent.click(screen.getByRole('button', { name: '+' }));
+    await userEvent.click(screen.getByRole('button', { name: /new widget/i }));
     expect(screen.getByRole('heading', { name: /new widget/i })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/widget message/i), 'show weather');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
@@ -360,9 +360,9 @@ describe('Dashboard', () => {
     (window as any).api = m.api;
 
     const { container } = render(<Dashboard />);
-    await screen.findByRole('button', { name: '+' });
+    await screen.findByRole('button', { name: /new widget/i });
 
-    await userEvent.click(screen.getByRole('button', { name: '+' }));
+    await userEvent.click(screen.getByRole('button', { name: /new widget/i }));
     await userEvent.type(screen.getByLabelText(/widget message/i), 'p');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
 
@@ -376,9 +376,9 @@ describe('Dashboard', () => {
     (window as any).api = m.api;
 
     render(<Dashboard />);
-    await screen.findByRole('button', { name: '+' });
+    await screen.findByRole('button', { name: /new widget/i });
 
-    await userEvent.click(screen.getByRole('button', { name: '+' }));
+    await userEvent.click(screen.getByRole('button', { name: /new widget/i }));
     await userEvent.type(screen.getByLabelText(/widget message/i), 'p');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
 
