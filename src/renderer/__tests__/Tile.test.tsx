@@ -42,7 +42,7 @@ describe('Tile', () => {
     expect(wv!.getAttribute('src')).toBe('file:///path/index.html');
   });
 
-  it('shows error message + Retry + Dismiss when state is error', async () => {
+  it('shows error message + Retry + Delete when state is error', async () => {
     const onRetry = vi.fn();
     const onDismiss = vi.fn();
     render(
@@ -62,7 +62,10 @@ describe('Tile', () => {
     expect(screen.getByText(/codex exited/i)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /retry/i }));
     expect(onRetry).toHaveBeenCalled();
-    await userEvent.click(screen.getByRole('button', { name: /dismiss/i }));
+    const deleteBtn = screen.getByRole('button', { name: /delete/i });
+    await userEvent.click(deleteBtn);
+    expect(onDismiss).not.toHaveBeenCalled();
+    await userEvent.click(deleteBtn);
     expect(onDismiss).toHaveBeenCalled();
   });
 
@@ -88,11 +91,39 @@ describe('Tile', () => {
     await userEvent.click(screen.getByRole('button', { name: 'pin' }));
     await userEvent.click(screen.getByRole('button', { name: /refresh/i }));
     await userEvent.click(screen.getByRole('button', { name: 'edit with chat' }));
-    await userEvent.click(screen.getByRole('button', { name: /dismiss/i }));
+    const deleteBtn = screen.getByRole('button', { name: /delete/i });
+    await userEvent.click(deleteBtn);
+    await userEvent.click(deleteBtn);
     expect(onRefresh).toHaveBeenCalled();
     expect(onEditChat).toHaveBeenCalled();
     expect(onTogglePinned).toHaveBeenCalled();
     expect(onDismiss).toHaveBeenCalled();
+  });
+
+  it('delete requires a confirm click before dismissing', async () => {
+    const onDismiss = vi.fn();
+    render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'live' }}
+        htmlUrl="file:///x"
+        widgetPreloadUrl=""
+        onRefresh={() => {}}
+        onDismiss={onDismiss}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onRetry={() => {}}
+      />
+    );
+
+    const btn = screen.getByRole('button', { name: /^delete$/i });
+    await userEvent.click(btn);
+    expect(onDismiss).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /click to confirm/i })).toBeInTheDocument();
+
+    await userEvent.click(btn);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
   it('shows pin for unpinned tiles and calls onTogglePinned', async () => {

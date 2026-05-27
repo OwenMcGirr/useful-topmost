@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { TileState } from './types';
 
 interface Props {
@@ -43,10 +43,26 @@ const BTN: React.CSSProperties = {
 
 export default function Tile(props: Props) {
   const wvRef = useRef<HTMLElement>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  useEffect(() => {
+    if (!confirmingDelete) return;
+    const timer = window.setTimeout(() => setConfirmingDelete(false), 3000);
+    return () => window.clearTimeout(timer);
+  }, [confirmingDelete]);
+
   const handleRefresh = () => {
     const wv = wvRef.current as any;
     if (wv && typeof wv.reload === 'function') wv.reload();
     props.onRefresh();
+  };
+
+  const handleDelete = () => {
+    if (confirmingDelete) {
+      props.onDismiss();
+      return;
+    }
+    setConfirmingDelete(true);
   };
 
   return (
@@ -75,7 +91,12 @@ export default function Tile(props: Props) {
         {props.state.kind === 'error' && (
           <button style={BTN} onClick={props.onRetry}>retry</button>
         )}
-        <button style={BTN} onClick={props.onDismiss}>dismiss</button>
+        <button
+          style={confirmingDelete ? { ...BTN, color: '#f85149', borderColor: '#f85149' } : BTN}
+          onClick={handleDelete}
+        >
+          {confirmingDelete ? 'click to confirm' : 'delete'}
+        </button>
       </div>
 
       {props.state.kind === 'building' && (
