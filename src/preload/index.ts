@@ -3,6 +3,7 @@ import type { IpcRendererEvent } from 'electron';
 import type { PublicProvider, Provider } from '../main/secrets-store';
 import type { OnboardingState } from '../main/onboarding-store';
 import type { UpdateState } from '../main/updater';
+import type { WidgetSize } from '../main/widget-store';
 
 export interface CodexStatus {
   installed: boolean;
@@ -14,6 +15,7 @@ export interface Widget {
   prompt: string;
   created_at: string;
   pinned?: boolean;
+  size?: WidgetSize;
 }
 
 export type WidgetChatRole = 'user' | 'status';
@@ -40,6 +42,8 @@ const api = {
   deleteWidget: (uuid: string) => ipcRenderer.invoke('widget:delete', uuid) as Promise<{ ok: true }>,
   setWidgetPinned: (uuid: string, pinned: boolean) =>
     ipcRenderer.invoke('widget:setPinned', uuid, pinned) as Promise<{ ok: true }>,
+  setWidgetSize: (uuid: string, size: WidgetSize) =>
+    ipcRenderer.invoke('widget:setSize', uuid, size) as Promise<{ ok: true } | { ok: false; error: string }>,
   listWidgets: () => ipcRenderer.invoke('widget:list') as Promise<Widget[]>,
   getWidgetMeta: (uuid: string) => ipcRenderer.invoke('widget:getMeta', uuid) as Promise<{ prompt: string; created_at: string }>,
   htmlUrl: (uuid: string) => ipcRenderer.invoke('widget:htmlUrl', uuid) as Promise<string>,
@@ -83,4 +87,4 @@ const api = {
 contextBridge.exposeInMainWorld('api', api);
 
 export type Api = typeof api;
-export type { UpdateState };
+export type { UpdateState, WidgetSize };

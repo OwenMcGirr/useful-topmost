@@ -62,6 +62,7 @@ function mockApi(opts: { onboardingDismissed?: boolean } = {}) {
     listWidgetChat: vi.fn(async () => []),
     deleteWidget: vi.fn(async () => ({ ok: true })),
     setWidgetPinned: vi.fn(async () => ({ ok: true })),
+    setWidgetSize: vi.fn(async () => ({ ok: true })),
     getWidgetMeta: vi.fn(async () => ({ prompt: 'p', created_at: '' })),
     htmlUrl: vi.fn(async (u: string) => `file:///${u}/index.html`),
     codexAvailable: vi.fn(async () => true),

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { TileState } from './types';
+import type { WidgetSize } from '../preload';
 
 interface Props {
   uuid: string;
@@ -8,15 +9,23 @@ interface Props {
   htmlUrl: string;
   widgetPreloadUrl: string;
   pinned?: boolean;
+  size?: WidgetSize;
   onRefresh: () => void;
   onDismiss: () => void;
   onEditChat: () => void;
   onTogglePinned: () => void;
+  onCycleSize: () => void;
   onRetry: () => void;
 }
 
+const SIZE_LABEL: Record<WidgetSize, string> = {
+  small: 'size 1×1',
+  wide: 'size 2×1',
+  large: 'size 2×2'
+};
+
 const TILE: React.CSSProperties = {
-  position: 'relative', width: 400, height: 300,
+  position: 'relative', width: '100%', height: '100%',
   background: '#161b22', border: '1px solid #30363d',
   borderRadius: 6, overflow: 'hidden'
 };
@@ -68,6 +77,9 @@ export default function Tile(props: Props) {
     <div className="tile" style={TILE}>
       {props.pinned === true && <div data-pin-indicator aria-label="pinned" style={PIN_BADGE} />}
       <div className="tile-chrome" data-chrome style={CHROME}>
+        <button style={BTN} onClick={props.onCycleSize}>
+          {SIZE_LABEL[props.size ?? 'small']}
+        </button>
         <button style={BTN} onClick={props.onTogglePinned}>
           {props.pinned === true ? 'unpin' : 'pin'}
         </button>

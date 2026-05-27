@@ -131,6 +131,18 @@ describe('widget-store', () => {
     await expect(store.setPinned('missing', true)).rejects.toThrow();
   });
 
+  it('sets size and surfaces it in list()', async () => {
+    const root = await freshRoot();
+    const store = createWidgetStore(root);
+    const uuid = await store.create('p');
+
+    expect((await store.list())[0].size).toBeUndefined();
+
+    await store.setSize(uuid, 'large');
+    expect((await store.getMeta(uuid)).size).toBe('large');
+    expect((await store.list())[0].size).toBe('large');
+  });
+
   it('reads and replaces widget HTML', async () => {
     const root = await freshRoot();
     const store = createWidgetStore(root);
