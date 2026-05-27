@@ -12,6 +12,7 @@ import {
   SHUFFLE_INTERVAL_MS,
   TILE_GAP,
   calculateDashboardCapacity,
+  pickDashboardPage,
   pickVisibleDashboardTiles
 } from './dashboard-grid';
 
@@ -60,11 +61,25 @@ const GEAR_BUTTON: React.CSSProperties = {
   border: '1px solid #30363d', cursor: 'pointer', zIndex: 50
 };
 
-const SHUFFLE_BUTTON: React.CSSProperties = {
+const PAGER_BUTTON: React.CSSProperties = {
+  height: 48, width: 48, padding: 0, borderRadius: 24,
+  background: '#21262d', color: '#e6edf3', fontSize: 18,
+  border: '1px solid #30363d', cursor: 'pointer'
+};
+
+const PAGER_BAR: React.CSSProperties = {
   position: 'fixed', bottom: 32, right: 176,
+  display: 'flex', alignItems: 'center', gap: 8, zIndex: 50
+};
+
+const PAGER_COUNT: React.CSSProperties = {
+  color: '#8b949e', fontSize: 12, padding: '0 4px'
+};
+
+const SHUFFLE_BUTTON: React.CSSProperties = {
   height: 48, padding: '0 16px', borderRadius: 24,
   background: '#21262d', color: '#e6edf3', fontSize: 14,
-  border: '1px solid #30363d', cursor: 'pointer', zIndex: 50
+  border: '1px solid #30363d', cursor: 'pointer'
 };
 
 const EMPTY_HINT: React.CSSProperties = {
@@ -85,6 +100,7 @@ export default function Dashboard() {
   const [tiles, setTiles] = useState<TileEntry[]>([]);
   const [gridSize, setGridSize] = useState({ width: 0, height: 0 });
   const [visibleIds, setVisibleIds] = useState<string[]>([]);
+  const [pageIndex, setPageIndex] = useState<number | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chat, setChat] = useState<ChatState>({ open: false });
   const [widgetPreload, setWidgetPreload] = useState<string>('');
@@ -326,6 +342,7 @@ export default function Dashboard() {
   }, [tiles]);
 
   const shuffleVisibleTiles = useCallback(() => {
+    setPageIndex(null);
     setVisibleIds((previousIds) => {
       if (tiles.length <= capacity) return tiles.map((tile) => tile.uuid);
 
@@ -337,7 +354,27 @@ export default function Dashboard() {
     });
   }, [capacity, tiles]);
 
+  const pageCount = useMemo(() => {
+    if (tiles.length <= capacity) return 1;
+    const pinnedCount = tiles.filter((tile) => tile.pinned === true).length;
+    if (pinnedCount >= capacity) return 1;
+    const unpinnedCount = tiles.length - pinnedCount;
+    const slots = capacity - pinnedCount;
+    return Math.max(1, Math.ceil(unpinnedCount / slots));
+  }, [capacity, tiles]);
+
+  const stepPage = useCallback((delta: number) => {
+    setPageIndex((current) => {
+      const base = current ?? 0;
+      return ((base + delta) % pageCount + pageCount) % pageCount;
+    });
+  }, [pageCount]);
+
   useEffect(() => {
+    if (pageIndex !== null) {
+      setVisibleIds(pickDashboardPage(tiles, capacity, pageIndex).map((tile) => tile.uuid));
+      return;
+    }
     setVisibleIds((previousIds) => {
       if (tiles.length <= capacity) return tiles.map((tile) => tile.uuid);
 
@@ -347,13 +384,13 @@ export default function Dashboard() {
 
       return pickVisibleDashboardTiles(tiles, capacity, currentVisibleTiles).map((tile) => tile.uuid);
     });
-  }, [capacity, tileSelectionKey, tiles]);
+  }, [capacity, tileSelectionKey, tiles, pageIndex]);
 
   useEffect(() => {
-    if (tiles.length <= capacity) return;
+    if (tiles.length <= capacity || pageIndex !== null) return;
     const interval = window.setInterval(shuffleVisibleTiles, SHUFFLE_INTERVAL_MS);
     return () => window.clearInterval(interval);
-  }, [capacity, shuffleVisibleTiles, tiles.length]);
+  }, [capacity, shuffleVisibleTiles, tiles.length, pageIndex]);
 
   const visibleTiles = useMemo(() => {
     if (tiles.length <= capacity) return tiles;
@@ -402,7 +439,14 @@ export default function Dashboard() {
         </AnimatePresence>
       </div>
       {showShuffle && (
-        <button aria-label="shuffle widgets" title="Shuffle visible widgets" style={SHUFFLE_BUTTON} onClick={shuffleVisibleTiles}>shuffle</button>
+        <div style={PAGER_BAR}>
+          <span style={PAGER_COUNT} aria-label="visible widgets">
+            {visibleTiles.length} of {tiles.length}
+          </span>
+          <button aria-label="previous page" title="Previous page" style={PAGER_BUTTON} onClick={() => stepPage(-1)}>‹</button>
+          <button aria-label="next page" title="Next page" style={PAGER_BUTTON} onClick={() => stepPage(1)}>›</button>
+          <button aria-label="shuffle widgets" title="Shuffle visible widgets" style={SHUFFLE_BUTTON} onClick={shuffleVisibleTiles}>shuffle</button>
+        </div>
       )}
       <button aria-label="settings" title="Settings" style={GEAR_BUTTON} onClick={() => setSettingsOpen(true)}>⚙</button>
       <button aria-label="new widget" title="New widget" style={PLUS_BUTTON} onClick={() => setChat({ open: true, mode: 'create' })}>+</button>

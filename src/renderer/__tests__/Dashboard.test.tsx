@@ -160,6 +160,41 @@ describe('Dashboard', () => {
     expect(screen.getByRole('button', { name: /shuffle widgets/i })).toBeInTheDocument();
   });
 
+  it('shows a visible-count badge when tiles exceed capacity', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce(widgets(7));
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize();
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(4));
+
+    expect(screen.getByLabelText(/visible widgets/i).textContent).toBe('4 of 7');
+  });
+
+  it('next-page button advances to a deterministic slice of the unpinned tiles', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce(widgets(8));
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize();
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(4));
+
+    await userEvent.click(screen.getByRole('button', { name: /next page/i }));
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(4));
+    const page1 = renderedWidgetSrcs(container);
+
+    await userEvent.click(screen.getByRole('button', { name: /next page/i }));
+    await waitFor(() => {
+      const current = renderedWidgetSrcs(container);
+      expect(current).not.toEqual(page1);
+    });
+    const page0 = renderedWidgetSrcs(container);
+
+    expect(new Set([...page0, ...page1]).size).toBe(8);
+  });
+
   it('clicking shuffle changes the visible set when another set is possible', async () => {
     const m = mockApi({ onboardingDismissed: true });
     m.api.listWidgets.mockResolvedValueOnce(widgets(5));

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { calculateDashboardCapacity, pickRandomTiles, pickVisibleDashboardTiles } from '../dashboard-grid';
+import { calculateDashboardCapacity, pickDashboardPage, pickRandomTiles, pickVisibleDashboardTiles } from '../dashboard-grid';
 
 describe('dashboard grid helpers', () => {
   it('calculates fixed tile capacity from available space', () => {
@@ -133,5 +133,34 @@ describe('dashboard grid helpers', () => {
     pickVisibleDashboardTiles(tiles, 2);
 
     expect(tiles.map((tile) => tile.uuid)).toEqual(original);
+  });
+
+  it('pickDashboardPage returns deterministic page slices with pinned always present', () => {
+    const tiles = [
+      { uuid: 'pin1', pinned: true },
+      { uuid: 'a' }, { uuid: 'b' }, { uuid: 'c' },
+      { uuid: 'd' }, { uuid: 'e' }, { uuid: 'f' }
+    ];
+
+    const page0 = pickDashboardPage(tiles, 3, 0);
+    const page1 = pickDashboardPage(tiles, 3, 1);
+    const page2 = pickDashboardPage(tiles, 3, 2);
+
+    expect(page0.map((tile) => tile.uuid)).toEqual(['pin1', 'a', 'b']);
+    expect(page1.map((tile) => tile.uuid)).toEqual(['pin1', 'c', 'd']);
+    expect(page2.map((tile) => tile.uuid)).toEqual(['pin1', 'e', 'f']);
+  });
+
+  it('pickDashboardPage wraps the page index modulo page count', () => {
+    const tiles = [{ uuid: 'a' }, { uuid: 'b' }, { uuid: 'c' }, { uuid: 'd' }];
+
+    expect(pickDashboardPage(tiles, 2, 2).map((tile) => tile.uuid)).toEqual(['a', 'b']);
+    expect(pickDashboardPage(tiles, 2, -1).map((tile) => tile.uuid)).toEqual(['c', 'd']);
+  });
+
+  it('pickDashboardPage returns all tiles when capacity is enough for everything', () => {
+    const tiles = [{ uuid: 'a' }, { uuid: 'b' }];
+
+    expect(pickDashboardPage(tiles, 4, 0).map((tile) => tile.uuid)).toEqual(['a', 'b']);
   });
 });
