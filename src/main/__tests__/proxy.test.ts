@@ -117,4 +117,34 @@ describe('appFetch', () => {
 
     expect(fetchSpy.mock.calls[0][0]).toBe('https://pro.openweathermap.org/data?appid=SECRET');
   });
+
+  it('selectedProviderIds excludes a matching provider — no auth injected', async () => {
+    const store = fakeStore([queryProvider, headerProvider]);
+    // Only allow headerProvider for this call; queryProvider must NOT inject auth
+    // even though its hostname matches.
+    await appFetch(store, 'https://api.openweathermap.org/data?q=London', {}, ['h']);
+
+    expect(fetchSpy.mock.calls[0][0]).toBe('https://api.openweathermap.org/data?q=London');
+  });
+
+  it('selectedProviderIds including the provider still injects auth', async () => {
+    const store = fakeStore([queryProvider, headerProvider]);
+    await appFetch(store, 'https://api.openweathermap.org/data', {}, ['q']);
+
+    expect(fetchSpy.mock.calls[0][0]).toBe('https://api.openweathermap.org/data?appid=SECRET');
+  });
+
+  it('undefined selectedProviderIds preserves "all providers allowed" behavior', async () => {
+    const store = fakeStore([queryProvider]);
+    await appFetch(store, 'https://api.openweathermap.org/data', {}, undefined);
+
+    expect(fetchSpy.mock.calls[0][0]).toBe('https://api.openweathermap.org/data?appid=SECRET');
+  });
+
+  it('empty selectedProviderIds means no provider is allowed', async () => {
+    const store = fakeStore([queryProvider]);
+    await appFetch(store, 'https://api.openweathermap.org/data', {}, []);
+
+    expect(fetchSpy.mock.calls[0][0]).toBe('https://api.openweathermap.org/data');
+  });
 });

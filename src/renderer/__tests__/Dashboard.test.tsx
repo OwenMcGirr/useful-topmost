@@ -64,6 +64,7 @@ function mockApi(opts: { onboardingDismissed?: boolean } = {}) {
     cancelWidget: vi.fn(async () => ({ ok: true })),
     setWidgetPinned: vi.fn(async () => ({ ok: true })),
     setWidgetSize: vi.fn(async () => ({ ok: true })),
+    setWidgetProviders: vi.fn(async () => ({ ok: true })),
     getWidgetMeta: vi.fn(async () => ({ prompt: 'p', created_at: '' })),
     htmlUrl: vi.fn(async (u: string) => `file:///${u}/index.html`),
     codexAvailable: vi.fn(async () => true),
@@ -388,7 +389,7 @@ describe('Dashboard', () => {
     await userEvent.type(screen.getByLabelText(/widget message/i), 'show weather');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
 
-    expect(m.api.chatStartWidget).toHaveBeenCalledWith('show weather');
+    expect(m.api.chatStartWidget).toHaveBeenCalledWith('show weather', []);
     expect(await screen.findByText(/building widget/i)).toBeInTheDocument();
   });
 

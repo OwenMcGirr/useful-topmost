@@ -11,6 +11,11 @@ export interface WidgetMeta {
   chat?: WidgetChatMessage[];
   pinned?: boolean;
   size?: WidgetSize;
+  /**
+   * Allowlist of provider IDs this widget may use. Undefined means all
+   * providers are allowed (pre-existing widgets default to this for BC).
+   */
+  selectedProviderIds?: string[];
 }
 
 export interface Widget {
@@ -19,6 +24,7 @@ export interface Widget {
   created_at: string;
   pinned?: boolean;
   size?: WidgetSize;
+  selectedProviderIds?: string[];
 }
 
 export type WidgetChatRole = 'user' | 'status';
@@ -45,6 +51,7 @@ export interface WidgetStore {
   updatePrompt(uuid: string, prompt: string): Promise<void>;
   setPinned(uuid: string, pinned: boolean): Promise<void>;
   setSize(uuid: string, size: WidgetSize): Promise<void>;
+  setProviders(uuid: string, providerIds: string[] | undefined): Promise<void>;
   replaceWidgetHtml(uuid: string, html: string): Promise<void>;
   readWidgetHtml(uuid: string): Promise<string | null>;
   widgetsRoot(): string;
@@ -119,7 +126,8 @@ export function createWidgetStore(root: string): WidgetStore {
             prompt: meta.prompt,
             created_at: meta.created_at,
             pinned: meta.pinned === true,
-            size: meta.size
+            size: meta.size,
+            selectedProviderIds: meta.selectedProviderIds
           });
         } catch {
           // Skip a widget whose meta.json was deleted out-of-band.
@@ -169,6 +177,14 @@ export function createWidgetStore(root: string): WidgetStore {
     async setSize(uuid, size) {
       const meta = await readMeta(uuid);
       await writeMeta(uuid, { ...meta, size });
+    },
+
+    async setProviders(uuid, providerIds) {
+      const meta = await readMeta(uuid);
+      const next = { ...meta };
+      if (providerIds === undefined) delete next.selectedProviderIds;
+      else next.selectedProviderIds = providerIds;
+      await writeMeta(uuid, next);
     },
 
     async replaceWidgetHtml(uuid, html) {

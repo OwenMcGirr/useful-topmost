@@ -7,7 +7,7 @@ import type { SecretsStore, Provider } from './secrets-store';
 import type { OnboardingStore } from './onboarding-store';
 import type { runCodex as RunCodexFn } from './codex-runner';
 import { PROVIDER_LOOKUP_OUTPUT_FILE, buildChatPrompt, buildPrompt, buildProviderLookupPrompt } from './codex-prompt';
-import { appFetch, injectAuth } from './proxy';
+import { appFetch, filterProviders, injectAuth } from './proxy';
 import { runLocalExec, widgetCwdFromSenderUrl } from './local-exec';
 
 export type GetSender = () => Pick<WebContents, 'send'>;
@@ -159,12 +159,15 @@ export function registerIpc(
     if (inflight.get(uuid) === controller) inflight.delete(uuid);
   };
 
-  ipcMain.handle('widget:create', async (_event, prompt: string) => {
+  ipcMain.handle('widget:create', async (_event, prompt: string, selectedProviderIds?: string[]) => {
     const uuid = await widgets.create(prompt);
+    if (Array.isArray(selectedProviderIds)) {
+      await widgets.setProviders(uuid, selectedProviderIds);
+    }
     const controller = trackRun(uuid);
     void (async () => {
       const sender = getSender();
-      const providers = await secrets.list();
+      const providers = filterProviders(await secrets.list(), selectedProviderIds);
       const result = await runCodex({
         prompt: buildPrompt(prompt, providers),
         cwd: widgets.dir(uuid),
@@ -181,11 +184,14 @@ export function registerIpc(
     return { uuid };
   });
 
-  ipcMain.handle('widget:chatStart', async (_event, message: string) => {
+  ipcMain.handle('widget:chatStart', async (_event, message: string, selectedProviderIds?: string[]) => {
     const trimmed = typeof message === 'string' ? message.trim() : '';
     if (!trimmed) throw new Error('message is required');
 
     const uuid = await widgets.create(trimmed);
+    if (Array.isArray(selectedProviderIds)) {
+      await widgets.setProviders(uuid, selectedProviderIds);
+    }
     await widgets.appendChatMessage(uuid, chatMessage('user', trimmed));
     const status = chatMessage('status', 'Building...', 'building');
     await widgets.appendChatMessage(uuid, status);
@@ -193,8 +199,8 @@ export function registerIpc(
     const controller = trackRun(uuid);
     void (async () => {
       const sender = getSender();
-      const providers = await secrets.list();
       const meta = await widgets.getMeta(uuid);
+      const providers = filterProviders(await secrets.list(), meta.selectedProviderIds);
       const result = await runCodex({
         prompt: buildChatPrompt({ messages: meta.chat ?? [], providers }),
         cwd: widgets.dir(uuid),
@@ -245,8 +251,8 @@ export function registerIpc(
       const stagingDir = path.join(widgets.widgetsRoot(), '.staging', `${uuid}-${randomUUID()}`);
       try {
         await fs.mkdir(stagingDir, { recursive: true });
-        const providers = await secrets.list();
         const meta = await widgets.getMeta(uuid);
+        const providers = filterProviders(await secrets.list(), meta.selectedProviderIds);
         const currentHtml = await widgets.readWidgetHtml(uuid);
         const result = await runCodex({
           prompt: buildChatPrompt({ messages: meta.chat ?? [], currentHtml, providers }),
@@ -321,6 +327,24 @@ export function registerIpc(
       return { ok: false as const, error: 'size must be one of: small, wide, large' };
     }
     await widgets.setSize(uuid, size);
+    return { ok: true as const };
+  });
+
+  ipcMain.handle('widget:setProviders', async (_event, uuid: string, providerIds: unknown) => {
+    if (providerIds === undefined || providerIds === null) {
+      await widgets.setProviders(uuid, undefined);
+      return { ok: true as const };
+    }
+    if (!Array.isArray(providerIds) || !providerIds.every((id) => typeof id === 'string')) {
+      return { ok: false as const, error: 'providerIds must be an array of strings or null' };
+    }
+    const known = new Set((await secrets.list()).map((p) => p.id));
+    for (const id of providerIds) {
+      if (!known.has(id)) {
+        return { ok: false as const, error: `unknown provider id: ${id}` };
+      }
+    }
+    await widgets.setProviders(uuid, providerIds);
     return { ok: true as const };
   });
 
@@ -435,8 +459,21 @@ export function registerIpc(
     }
   });
 
-  ipcMain.handle('app:fetch', async (_event, url: string, init?: RequestInit) =>
-    appFetch(secrets, url, init));
+  ipcMain.handle('app:fetch', async (event, url: string, init?: RequestInit) => {
+    const cwd = widgetCwdFromSenderUrl(event.senderFrame?.url ?? '', widgets.widgetsRoot());
+    let selectedProviderIds: string[] | undefined;
+    if (cwd) {
+      const uuid = path.basename(cwd);
+      try {
+        const meta = await widgets.getMeta(uuid);
+        selectedProviderIds = meta.selectedProviderIds;
+      } catch {
+        // Widget meta unreadable — fall back to "all allowed" so failures
+        // don't silently break appFetch.
+      }
+    }
+    return appFetch(secrets, url, init, selectedProviderIds);
+  });
 
   ipcMain.handle('app:exec', async (event, command: string, args: string[] = []) => {
     const cwd = widgetCwdFromSenderUrl(event.senderFrame?.url ?? '', widgets.widgetsRoot());

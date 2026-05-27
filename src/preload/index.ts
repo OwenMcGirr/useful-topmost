@@ -16,6 +16,7 @@ export interface Widget {
   created_at: string;
   pinned?: boolean;
   size?: WidgetSize;
+  selectedProviderIds?: string[];
 }
 
 export type WidgetChatRole = 'user' | 'status';
@@ -46,9 +47,10 @@ export type LookupProviderResult =
   | { ok: false; error: string };
 
 const api = {
-  createWidget: (prompt: string) => ipcRenderer.invoke('widget:create', prompt) as Promise<{ uuid: string }>,
-  chatStartWidget: (message: string) =>
-    ipcRenderer.invoke('widget:chatStart', message) as Promise<{ uuid: string }>,
+  createWidget: (prompt: string, selectedProviderIds?: string[]) =>
+    ipcRenderer.invoke('widget:create', prompt, selectedProviderIds) as Promise<{ uuid: string }>,
+  chatStartWidget: (message: string, selectedProviderIds?: string[]) =>
+    ipcRenderer.invoke('widget:chatStart', message, selectedProviderIds) as Promise<{ uuid: string }>,
   chatSendWidget: (uuid: string, message: string) =>
     ipcRenderer.invoke('widget:chatSend', uuid, message) as Promise<ChatResult>,
   listWidgetChat: (uuid: string) =>
@@ -60,6 +62,8 @@ const api = {
     ipcRenderer.invoke('widget:setPinned', uuid, pinned) as Promise<{ ok: true }>,
   setWidgetSize: (uuid: string, size: WidgetSize) =>
     ipcRenderer.invoke('widget:setSize', uuid, size) as Promise<{ ok: true } | { ok: false; error: string }>,
+  setWidgetProviders: (uuid: string, providerIds: string[] | null) =>
+    ipcRenderer.invoke('widget:setProviders', uuid, providerIds) as Promise<{ ok: true } | { ok: false; error: string }>,
   listWidgets: () => ipcRenderer.invoke('widget:list') as Promise<Widget[]>,
   getWidgetMeta: (uuid: string) => ipcRenderer.invoke('widget:getMeta', uuid) as Promise<{ prompt: string; created_at: string }>,
   htmlUrl: (uuid: string) => ipcRenderer.invoke('widget:htmlUrl', uuid) as Promise<string>,

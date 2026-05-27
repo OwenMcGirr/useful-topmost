@@ -72,6 +72,105 @@ describe('ipc', () => {
     expect(sender.sent).toContainEqual({ channel: 'widget:error', payload: { uuid, error: 'boom' } });
   });
 
+  it('widget:setProviders persists known ids and rejects unknown ones', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn(async () => ({ ok: true }));
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    await ipc.invoke('secrets:save', {
+      id: 'p1', name: 'P1', hostnames: ['p1.example'],
+      auth: { type: 'query', param: 'k' }, value: 'V'
+    });
+    const uuid = await store.create('p');
+
+    const ok = await ipc.invoke('widget:setProviders', uuid, ['p1']);
+    expect(ok).toEqual({ ok: true });
+    expect((await store.getMeta(uuid)).selectedProviderIds).toEqual(['p1']);
+
+    const bad = await ipc.invoke('widget:setProviders', uuid, ['does-not-exist']);
+    expect(bad.ok).toBe(false);
+    expect(bad.error).toMatch(/does-not-exist/);
+
+    const cleared = await ipc.invoke('widget:setProviders', uuid, null);
+    expect(cleared).toEqual({ ok: true });
+    expect((await store.getMeta(uuid)).selectedProviderIds).toBeUndefined();
+  });
+
+  it('widget:create with selectedProviderIds filters providers passed to Codex', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+
+    let capturedPrompt = '';
+    const runCodex = vi.fn(async ({ cwd, prompt }: any) => {
+      capturedPrompt = prompt;
+      await fs.writeFile(path.join(cwd, 'index.html'), '<html></html>');
+      return { ok: true };
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    await ipc.invoke('secrets:save', {
+      id: 'p1', name: 'OpenWeather', hostnames: ['api.openweathermap.org'],
+      auth: { type: 'query', param: 'appid' }, value: 'KEY'
+    });
+    await ipc.invoke('secrets:save', {
+      id: 'p2', name: 'OtherAPI', hostnames: ['api.other.test'],
+      auth: { type: 'query', param: 'key' }, value: 'KEY2'
+    });
+
+    const { uuid } = await ipc.invoke('widget:create', 'p', ['p1']);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(capturedPrompt).toContain('OpenWeather');
+    expect(capturedPrompt).not.toContain('OtherAPI');
+    expect((await store.getMeta(uuid)).selectedProviderIds).toEqual(['p1']);
+  });
+
+  it('app:fetch passes the widget\'s selectedProviderIds through to appFetch (no auth when excluded)', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    let observedUrl = '';
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url: any) => {
+      observedUrl = typeof url === 'string' ? url : url.url;
+      return new Response('', { status: 200 });
+    }) as any;
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    try {
+      await ipc.invoke('secrets:save', {
+        id: 'p1', name: 'OpenWeather', hostnames: ['api.openweathermap.org'],
+        auth: { type: 'query', param: 'appid' }, value: 'KEY'
+      });
+      const uuid = await store.create('p');
+      // ensure the widget index.html exists at the path widgetCwdFromSenderUrl expects
+      await fs.writeFile(path.join(store.dir(uuid), 'index.html'), '<html></html>');
+      await store.setProviders(uuid, []); // empty allowlist — no providers allowed
+
+      const senderUrl = pathToFileURL(path.join(store.dir(uuid), 'index.html')).href;
+      const event = { senderFrame: { url: senderUrl } } as any;
+      await ipc.invokeWithEvent('app:fetch', event, 'https://api.openweathermap.org/data?q=London');
+
+      expect(observedUrl).toBe('https://api.openweathermap.org/data?q=London');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('widget:cancel aborts an in-flight codex run for the widget', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);
