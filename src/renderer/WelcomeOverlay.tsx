@@ -1,7 +1,7 @@
 export const EXAMPLE_PROMPTS: readonly string[] = [
   'a digital clock showing local time, updating every second',
   'Hacker News top 5 stories with comment count, refreshing every 5 minutes',
-  "today's NASA picture of the day with caption — needs a NASA provider"
+  "today's xkcd comic with title and alt text"
 ];
 
 interface Props {
