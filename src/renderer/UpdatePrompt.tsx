@@ -7,8 +7,8 @@ interface Props {
 
 const BANNER: React.CSSProperties = {
   position: 'fixed',
-  right: 32,
-  bottom: 112,
+  left: 32,
+  bottom: 32,
   zIndex: 60,
   minWidth: 260,
   maxWidth: 360,
