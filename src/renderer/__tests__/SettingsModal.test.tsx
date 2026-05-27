@@ -327,6 +327,25 @@ describe('SettingsModal', () => {
     expect(screen.queryByRole('button', { name: /restart to update/i })).toBeNull();
   });
 
+  it('disables Check for updates while the updater is busy (checking / downloading / downloaded)', async () => {
+    const { api } = mockApi([]);
+    (window as any).api = api;
+    const { rerender } = render(
+      <SettingsModal open={true} onClose={() => {}} updateState={{ status: 'checking' }} />
+    );
+    await userEvent.click(await screen.findByRole('button', { name: /^updates$/i }));
+    expect(screen.getByRole('button', { name: /check for updates/i })).toBeDisabled();
+
+    rerender(<SettingsModal open={true} onClose={() => {}} updateState={{ status: 'downloading', percent: 40 }} />);
+    expect(screen.getByRole('button', { name: /check for updates/i })).toBeDisabled();
+
+    rerender(<SettingsModal open={true} onClose={() => {}} updateState={{ status: 'downloaded', version: '2026.1.0-alpha.21' }} />);
+    expect(screen.getByRole('button', { name: /check for updates/i })).toBeDisabled();
+
+    rerender(<SettingsModal open={true} onClose={() => {}} updateState={{ status: 'not-available' }} />);
+    expect(screen.getByRole('button', { name: /check for updates/i })).not.toBeDisabled();
+  });
+
   it('shows restart action for downloaded updates and calls the supplied restart handler', async () => {
     const { api } = mockApi([]);
     const onRestartUpdate = vi.fn();
