@@ -133,6 +133,10 @@ export default function ApiProvidersSettings() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string>('');
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
+  const [lookupQuery, setLookupQuery] = useState('');
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [lookupError, setLookupError] = useState('');
+  const [lookupSource, setLookupSource] = useState('');
 
   const refresh = async () => {
     setProviders(await window.api.secrets.list());
@@ -147,6 +151,39 @@ export default function ApiProvidersSettings() {
   const startAdd = () => {
     setDraft({ ...empty, id: crypto.randomUUID() });
     setError('');
+    setLookupQuery('');
+    setLookupError('');
+    setLookupSource('');
+  };
+
+  const handleLookup = async () => {
+    if (!draft) return;
+    const query = lookupQuery.trim();
+    if (!query || lookupBusy) return;
+    setLookupBusy(true);
+    setLookupError('');
+    setLookupSource('');
+    try {
+      const result = await window.api.secrets.lookupProvider(query);
+      if (!result.ok) {
+        setLookupError(result.error);
+        return;
+      }
+      const { provider } = result;
+      setDraft({
+        ...draft,
+        name: provider.name,
+        hostnamesText: provider.hostnames.join('\n'),
+        authType: provider.auth.type,
+        param: provider.auth.type === 'query' ? provider.auth.param : '',
+        headerName: provider.auth.type === 'header' ? provider.auth.name : '',
+        headerScheme: provider.auth.type === 'header' ? provider.auth.scheme : 'none',
+        headerCustomPrefix: ''
+      });
+      setLookupSource(provider.source);
+    } finally {
+      setLookupBusy(false);
+    }
   };
 
   const startEdit = (p: PublicProvider) => {
@@ -225,6 +262,42 @@ export default function ApiProvidersSettings() {
 
       {draft ? (
         <div>
+          {!draft.editing && (
+            <div style={FIELD}>
+              <span style={{ display: 'block', fontSize: 12, opacity: 0.7, marginBottom: 4 }}>
+                Describe an API (Codex searches the official docs)
+              </span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  aria-label="describe an api"
+                  style={INPUT}
+                  value={lookupQuery}
+                  placeholder='e.g. "Stripe", "GitHub REST", "AlphaVantage"'
+                  disabled={lookupBusy}
+                  onChange={(e) => setLookupQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void handleLookup();
+                    }
+                  }}
+                />
+                <button
+                  style={{ ...BTN_PRIMARY, whiteSpace: 'nowrap', opacity: lookupBusy || !lookupQuery.trim() ? 0.5 : 1 }}
+                  disabled={lookupBusy || !lookupQuery.trim()}
+                  onClick={() => void handleLookup()}
+                >
+                  {lookupBusy ? <span className="spinner" aria-hidden /> : 'Search'}
+                </button>
+              </div>
+              {lookupError && <div style={{ color: '#f85149', fontSize: 12, marginTop: 6 }}>{lookupError}</div>}
+              {lookupSource && (
+                <div style={{ color: '#3fb950', fontSize: 12, marginTop: 6 }}>
+                  Filled from: <a href={lookupSource} target="_blank" rel="noreferrer" style={{ color: '#58a6ff' }}>{lookupSource}</a>
+                </div>
+              )}
+            </div>
+          )}
           {!draft.editing && (
             <label style={FIELD}>
               <span style={{ display: 'block', fontSize: 12, opacity: 0.7, marginBottom: 4 }}>Start from preset (optional)</span>

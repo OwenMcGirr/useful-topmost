@@ -19,7 +19,8 @@ function mockApi(initial: any[] = []) {
         if (idx >= 0) state.splice(idx, 1);
         return { ok: true };
       }),
-      test: vi.fn(async (_id: string) => ({ ok: true, status: 200 }) as any)
+      test: vi.fn(async (_id: string) => ({ ok: true, status: 200 }) as any),
+      lookupProvider: vi.fn(async (_query: string) => ({ ok: false, error: 'not mocked' }) as any)
     }
   };
   return { api, state };
@@ -130,6 +131,61 @@ describe('SettingsModal', () => {
     await waitFor(() => expect(api.secrets.save).toHaveBeenCalled());
     const arg = api.secrets.save.mock.calls[0][0];
     expect(arg.auth).toEqual({ type: 'header', name: 'X-API-Key' });
+  });
+
+  it('describe-an-API lookup fills the form and shows the source URL on success', async () => {
+    const { api } = mockApi([]);
+    api.secrets.lookupProvider = vi.fn(async (_query: string) => ({
+      ok: true,
+      provider: {
+        name: 'Stripe',
+        hostnames: ['api.stripe.com'],
+        auth: { type: 'header', name: 'Authorization', scheme: 'bearer' },
+        source: 'https://stripe.com/docs/api/authentication'
+      }
+    })) as any;
+    (window as any).api = api;
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /add provider/i }));
+    await userEvent.type(screen.getByLabelText(/describe an api/i), 'Stripe');
+    await userEvent.click(screen.getByRole('button', { name: /^search$/i }));
+
+    await waitFor(() => expect(api.secrets.lookupProvider).toHaveBeenCalledWith('Stripe'));
+    expect((screen.getByLabelText(/^name$/i) as HTMLInputElement).value).toBe('Stripe');
+    expect((screen.getByLabelText(/hostnames/i) as HTMLTextAreaElement).value).toBe('api.stripe.com');
+    expect((screen.getByLabelText(/^scheme$/i) as HTMLSelectElement).value).toBe('bearer');
+    expect(await screen.findByText(/stripe\.com\/docs\/api\/authentication/i)).toBeInTheDocument();
+  });
+
+  it('describe-an-API lookup shows inline error and leaves form untouched on failure', async () => {
+    const { api } = mockApi([]);
+    api.secrets.lookupProvider = vi.fn(async (_query: string) => ({
+      ok: false,
+      error: 'no official docs found'
+    })) as any;
+    (window as any).api = api;
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /add provider/i }));
+    await userEvent.type(screen.getByLabelText(/describe an api/i), 'made-up');
+    await userEvent.click(screen.getByRole('button', { name: /^search$/i }));
+
+    expect(await screen.findByText(/no official docs found/i)).toBeInTheDocument();
+    expect((screen.getByLabelText(/^name$/i) as HTMLInputElement).value).toBe('');
+  });
+
+  it('describe-an-API field is hidden when editing an existing provider', async () => {
+    const { api } = mockApi([{
+      id: 'p1', name: 'X', hostnames: ['x.com'],
+      auth: { type: 'query', param: 'k' }, value: 'V'
+    }]);
+    (window as any).api = api;
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /edit/i }));
+
+    expect(screen.queryByLabelText(/describe an api/i)).toBeNull();
   });
 
   it('picking a preset fills name, hostnames and auth fields', async () => {
