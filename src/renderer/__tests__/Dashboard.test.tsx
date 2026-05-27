@@ -38,11 +38,12 @@ function triggerDashboardResize(width = 880, height = 680) {
   });
 }
 
-function widgets(count: number) {
+function widgets(count: number, pinned: string[] = []) {
   return Array.from({ length: count }, (_, index) => ({
     uuid: `widget-${index + 1}`,
     prompt: `widget ${index + 1}`,
-    created_at: ''
+    created_at: '',
+    pinned: pinned.includes(`widget-${index + 1}`)
   }));
 }
 
@@ -60,6 +61,7 @@ function mockApi(opts: { onboardingDismissed?: boolean } = {}) {
     chatSendWidget: vi.fn(async () => ({ ok: true })),
     listWidgetChat: vi.fn(async () => []),
     deleteWidget: vi.fn(async () => ({ ok: true })),
+    setWidgetPinned: vi.fn(async () => ({ ok: true })),
     getWidgetMeta: vi.fn(async () => ({ prompt: 'p', created_at: '' })),
     htmlUrl: vi.fn(async (u: string) => `file:///${u}/index.html`),
     codexAvailable: vi.fn(async () => true),
@@ -212,6 +214,129 @@ describe('Dashboard', () => {
 
     await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(4));
     expect(m.api.deleteWidget).not.toHaveBeenCalled();
+  });
+
+  it('loads pinned state and keeps pinned widgets visible when overflowing', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce(widgets(5, ['widget-5']));
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize();
+
+    await waitFor(() => expect(renderedWidgetSrcs(container).some((src) => src.includes('widget-5'))).toBe(true));
+    expect(screen.getAllByRole('button', { name: 'unpin' })).toHaveLength(1);
+  });
+
+  it('shuffle changes only unpinned filler when pinned widgets fit', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce(widgets(5, ['widget-5']));
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize();
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(4));
+    const before = renderedWidgetSrcs(container);
+    expect(before.some((src) => src.includes('widget-5'))).toBe(true);
+
+    await userEvent.click(screen.getByRole('button', { name: /shuffle widgets/i }));
+
+    await waitFor(() => {
+      const after = renderedWidgetSrcs(container);
+      expect(after).not.toEqual(before);
+      expect(after.some((src) => src.includes('widget-5'))).toBe(true);
+    });
+  });
+
+  it('auto-rotation keeps pinned widgets visible when pinned widgets fit', async () => {
+    let intervalCallback: TimerHandler | undefined;
+    vi.spyOn(window, 'setInterval').mockImplementation((handler: TimerHandler, timeout?: number) => {
+      if (timeout === 60_000) intervalCallback = handler;
+      return 1;
+    });
+    vi.spyOn(window, 'clearInterval').mockImplementation(() => undefined);
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce(widgets(5, ['widget-5']));
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize();
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(4));
+
+    act(() => {
+      if (typeof intervalCallback === 'function') intervalCallback();
+    });
+
+    await waitFor(() => expect(renderedWidgetSrcs(container).some((src) => src.includes('widget-5'))).toBe(true));
+  });
+
+  it('shows only pinned widgets when pinned widgets exceed capacity', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce(widgets(5, ['widget-1', 'widget-2', 'widget-3', 'widget-4', 'widget-5']));
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize(464, 364);
+
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(1));
+    expect(screen.queryAllByRole('button', { name: 'pin' })).toHaveLength(0);
+  });
+
+  it('clicking pin and unpin persists and updates tile state', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce(widgets(1));
+    (window as any).api = m.api;
+
+    render(<Dashboard />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'pin' }));
+    expect(m.api.setWidgetPinned).toHaveBeenCalledWith('widget-1', true);
+    expect(await screen.findByRole('button', { name: 'unpin' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'unpin' }));
+    expect(m.api.setWidgetPinned).toHaveBeenCalledWith('widget-1', false);
+    expect(await screen.findByRole('button', { name: 'pin' })).toBeInTheDocument();
+  });
+
+  it('failed pin IPC reverts tile state', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce(widgets(1));
+    m.api.setWidgetPinned.mockRejectedValueOnce(new Error('nope'));
+    (window as any).api = m.api;
+
+    render(<Dashboard />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'pin' }));
+
+    expect(await screen.findByRole('button', { name: 'pin' })).toBeInTheDocument();
+  });
+
+  it('building tile can be pinned', async () => {
+    const m = mockApi();
+    (window as any).api = m.api;
+
+    render(<Dashboard />);
+    await userEvent.click(await screen.findByRole('button', { name: '+' }));
+    await userEvent.type(screen.getByLabelText(/widget message/i), 'show weather');
+    await userEvent.click(screen.getByRole('button', { name: /send/i }));
+    await userEvent.click(await screen.findByRole('button', { name: 'pin' }));
+
+    expect(m.api.setWidgetPinned).toHaveBeenCalledWith('new-uuid', true);
+  });
+
+  it('error tile can be pinned', async () => {
+    const m = mockApi();
+    (window as any).api = m.api;
+
+    render(<Dashboard />);
+    await userEvent.click(await screen.findByRole('button', { name: '+' }));
+    await userEvent.type(screen.getByLabelText(/widget message/i), 'p');
+    await userEvent.click(screen.getByRole('button', { name: /send/i }));
+    m.fireError('new-uuid', 'boom');
+
+    await userEvent.click(await screen.findByRole('button', { name: 'pin' }));
+
+    expect(m.api.setWidgetPinned).toHaveBeenCalledWith('new-uuid', true);
   });
 
   it('+ button opens chat panel; sending calls chatStartWidget and adds a building tile', async () => {

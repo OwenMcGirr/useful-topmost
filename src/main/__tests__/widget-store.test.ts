@@ -34,6 +34,19 @@ describe('widget-store', () => {
     expect(items.map((w) => w.uuid)).toEqual([a, b]);
     expect(items[0].prompt).toBe('first');
     expect(items[1].prompt).toBe('second');
+    expect(items[0].pinned).toBe(false);
+  });
+
+  it('list() returns pinned state for pinned widgets', async () => {
+    const root = await freshRoot();
+    const store = createWidgetStore(root);
+    const uuid = await store.create('important');
+
+    await store.setPinned(uuid, true);
+
+    expect(await store.list()).toEqual([
+      expect.objectContaining({ uuid, pinned: true })
+    ]);
   });
 
   it('delete() removes uuid from dashboard and deletes the folder', async () => {
@@ -99,6 +112,25 @@ describe('widget-store', () => {
     expect((await store.getMeta(uuid)).prompt).toBe('new');
   });
 
+  it('sets pinned state', async () => {
+    const root = await freshRoot();
+    const store = createWidgetStore(root);
+    const uuid = await store.create('p');
+
+    await store.setPinned(uuid, true);
+    expect((await store.getMeta(uuid)).pinned).toBe(true);
+
+    await store.setPinned(uuid, false);
+    expect((await store.getMeta(uuid)).pinned).toBe(false);
+  });
+
+  it('setPinned rejects for missing widgets', async () => {
+    const root = await freshRoot();
+    const store = createWidgetStore(root);
+
+    await expect(store.setPinned('missing', true)).rejects.toThrow();
+  });
+
   it('reads and replaces widget HTML', async () => {
     const root = await freshRoot();
     const store = createWidgetStore(root);
@@ -119,7 +151,7 @@ describe('widget-store', () => {
     delete meta.chat;
     await fs.writeFile(metaPath, JSON.stringify(meta, null, 2));
 
-    expect(await store.list()).toEqual([{ uuid, prompt: 'legacy', created_at: meta.created_at }]);
+    expect(await store.list()).toEqual([{ uuid, prompt: 'legacy', created_at: meta.created_at, pinned: false }]);
     expect((await store.getMeta(uuid)).chat).toBeUndefined();
   });
 });

@@ -65,3 +65,32 @@ export function pickRandomTiles<T extends { uuid: string }>(
 
   return candidate;
 }
+
+export function pickVisibleDashboardTiles<T extends { uuid: string; pinned?: boolean }>(
+  tiles: T[],
+  capacity: number,
+  previous: T[] = []
+): T[] {
+  const boundedCapacity = Math.max(0, capacity);
+  if (boundedCapacity === 0) return [];
+  if (tiles.length <= boundedCapacity) return [...tiles];
+
+  const pinnedTiles = tiles.filter((tile) => tile.pinned === true);
+  if (pinnedTiles.length === 0) {
+    return pickRandomTiles(tiles, boundedCapacity, previous);
+  }
+
+  if (pinnedTiles.length > boundedCapacity) {
+    const previousPinned = previous.filter((tile) => tile.pinned === true);
+    return pickRandomTiles(pinnedTiles, boundedCapacity, previousPinned);
+  }
+
+  const unpinnedSlots = boundedCapacity - pinnedTiles.length;
+  const previousUnpinned = previous.filter((tile) => tile.pinned !== true);
+  const unpinnedTiles = tiles.filter((tile) => tile.pinned !== true);
+
+  return [
+    ...pinnedTiles,
+    ...pickRandomTiles(unpinnedTiles, unpinnedSlots, previousUnpinned)
+  ];
+}

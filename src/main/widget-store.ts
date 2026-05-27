@@ -7,12 +7,14 @@ export interface WidgetMeta {
   created_at: string;
   codex_model?: string;
   chat?: WidgetChatMessage[];
+  pinned?: boolean;
 }
 
 export interface Widget {
   uuid: string;
   prompt: string;
   created_at: string;
+  pinned?: boolean;
 }
 
 export type WidgetChatRole = 'user' | 'status';
@@ -37,6 +39,7 @@ export interface WidgetStore {
   appendChatMessage(uuid: string, message: WidgetChatMessage): Promise<void>;
   replaceChatMessage(uuid: string, messageId: string, message: WidgetChatMessage): Promise<void>;
   updatePrompt(uuid: string, prompt: string): Promise<void>;
+  setPinned(uuid: string, pinned: boolean): Promise<void>;
   replaceWidgetHtml(uuid: string, html: string): Promise<void>;
   readWidgetHtml(uuid: string): Promise<string | null>;
   widgetsRoot(): string;
@@ -106,7 +109,12 @@ export function createWidgetStore(root: string): WidgetStore {
       for (const uuid of d.widgets) {
         try {
           const meta = await readMeta(uuid);
-          out.push({ uuid, prompt: meta.prompt, created_at: meta.created_at });
+          out.push({
+            uuid,
+            prompt: meta.prompt,
+            created_at: meta.created_at,
+            pinned: meta.pinned === true
+          });
         } catch {
           // Skip a widget whose meta.json was deleted out-of-band.
         }
@@ -145,6 +153,11 @@ export function createWidgetStore(root: string): WidgetStore {
     async updatePrompt(uuid, prompt) {
       const meta = await readMeta(uuid);
       await writeMeta(uuid, { ...meta, prompt });
+    },
+
+    async setPinned(uuid, pinned) {
+      const meta = await readMeta(uuid);
+      await writeMeta(uuid, { ...meta, pinned });
     },
 
     async replaceWidgetHtml(uuid, html) {
