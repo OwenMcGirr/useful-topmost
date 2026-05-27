@@ -187,6 +187,10 @@ export default function ApiProvidersSettings() {
         return;
       }
       const { provider } = result;
+      if (!provider || !Array.isArray(provider.hostnames) || !provider.auth) {
+        setLookupError(`unexpected response shape: ${JSON.stringify(result)}`);
+        return;
+      }
       setDraft({
         ...draft,
         name: provider.name,
@@ -198,6 +202,8 @@ export default function ApiProvidersSettings() {
         headerCustomPrefix: ''
       });
       setLookupSource(provider.source);
+    } catch (e: any) {
+      setLookupError(e?.message ?? String(e ?? 'unknown error'));
     } finally {
       setLookupBusy(false);
     }

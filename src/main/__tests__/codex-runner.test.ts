@@ -103,6 +103,26 @@ describe('runCodex', () => {
     expect(log).toContain('hello log');
   });
 
+  it('ignores empty output files (apply_patch race) and waits for content', async () => {
+    const cwd = await tempDir();
+    const outputPath = path.join(cwd, 'index.html');
+    const child = fakeChild();
+    const spawnFn = vi.fn(() => {
+      queueMicrotask(async () => {
+        await fs.writeFile(outputPath, '');
+        await new Promise((r) => setTimeout(r, 60));
+        await fs.writeFile(outputPath, '<html>content</html>');
+      });
+      return child;
+    });
+
+    const result = await runCodex({ prompt: 'p', cwd, spawnFn: spawnFn as any, timeoutMs: 5000 });
+
+    expect(result.ok).toBe(true);
+    const written = await fs.readFile(outputPath, 'utf8');
+    expect(written).toBe('<html>content</html>');
+  });
+
   it('captureLastMessage adds --output-last-message <path> to the codex args', async () => {
     const cwd = await tempDir();
     const child = fakeChild();

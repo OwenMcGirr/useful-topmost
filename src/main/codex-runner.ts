@@ -88,12 +88,15 @@ export async function runCodex(opts: CodexRunOptions): Promise<CodexRunResult> {
       finish({ ok: false, error: 'timeout' });
     }, timeoutMs);
 
-    // Poll for index.html — Codex often keeps doing post-write transcript
+    // Poll for the output file. Codex often keeps doing post-write transcript
     // work for a minute or two after the file lands, so don't wait for exit.
+    // Require size > 0 because Codex's apply_patch tool creates the file then
+    // writes content in two steps; catching it at the empty stage and killing
+    // the child mid-write leaves the file 0-byte and parsing breaks.
     const poller = setInterval(async () => {
       try {
-        await fs.access(outputPath);
-        finish({ ok: true, path: outputPath });
+        const stat = await fs.stat(outputPath);
+        if (stat.size > 0) finish({ ok: true, path: outputPath });
       } catch { /* not yet */ }
     }, POLL_INTERVAL_MS);
 
