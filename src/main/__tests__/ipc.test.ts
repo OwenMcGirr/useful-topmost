@@ -369,6 +369,67 @@ describe('ipc', () => {
     expect(await ipc.invoke('secrets:list')).toEqual([]);
   });
 
+  it('secrets:test issues a GET to the first hostname with auth injected', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    let observedUrl = '';
+    let observedAuthHeader = '';
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url: any, init: any) => {
+      observedUrl = typeof url === 'string' ? url : url.url;
+      observedAuthHeader = (init?.headers ?? {}).Authorization ?? '';
+      return new Response('', { status: 200 });
+    }) as any;
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    try {
+      await ipc.invoke('secrets:save', {
+        id: 'p1', name: 'X', hostnames: ['api.example.com'],
+        auth: { type: 'header', name: 'Authorization', prefix: 'Bearer ' },
+        value: 'TOKEN'
+      });
+      const result = await ipc.invoke('secrets:test', 'p1');
+
+      expect(result).toEqual({ ok: true, status: 200 });
+      expect(observedUrl).toBe('https://api.example.com/');
+      expect(observedAuthHeader).toBe('Bearer TOKEN');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('secrets:test returns ok:false with an error when fetch throws', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => { throw new Error('getaddrinfo ENOTFOUND'); }) as any;
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    try {
+      await ipc.invoke('secrets:save', {
+        id: 'p1', name: 'X', hostnames: ['nowhere.invalid'],
+        auth: { type: 'query', param: 'k' }, value: 'V'
+      });
+      const result = await ipc.invoke('secrets:test', 'p1');
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/ENOTFOUND/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('app:fetch delegates to proxy and returns the envelope', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);

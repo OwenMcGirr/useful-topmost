@@ -60,7 +60,9 @@ const api = {
     list: () => ipcRenderer.invoke('secrets:list') as Promise<PublicProvider[]>,
     save: (p: Provider | (Omit<Provider, 'value'> & { value?: string })) =>
       ipcRenderer.invoke('secrets:save', p) as Promise<SaveResult>,
-    delete: (id: string) => ipcRenderer.invoke('secrets:delete', id) as Promise<{ ok: true }>
+    delete: (id: string) => ipcRenderer.invoke('secrets:delete', id) as Promise<{ ok: true }>,
+    test: (id: string) =>
+      ipcRenderer.invoke('secrets:test', id) as Promise<{ ok: true; status: number } | { ok: false; error: string }>
   },
   onboarding: {
     get: () => ipcRenderer.invoke('onboarding:get') as Promise<OnboardingState>,

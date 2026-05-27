@@ -7,7 +7,7 @@ import type { SecretsStore, Provider } from './secrets-store';
 import type { OnboardingStore } from './onboarding-store';
 import type { runCodex as RunCodexFn } from './codex-runner';
 import { buildChatPrompt, buildPrompt } from './codex-prompt';
-import { appFetch } from './proxy';
+import { appFetch, injectAuth } from './proxy';
 import { runLocalExec, widgetCwdFromSenderUrl } from './local-exec';
 
 export type GetSender = () => Pick<WebContents, 'send'>;
@@ -233,6 +233,28 @@ export function registerIpc(
   ipcMain.handle('secrets:delete', async (_event, id: string) => {
     await secrets.delete(id);
     return { ok: true };
+  });
+
+  ipcMain.handle('secrets:test', async (_event, id: string) => {
+    const providers = await secrets.listForProxy();
+    const provider = providers.find((p) => p.id === id);
+    if (!provider) return { ok: false as const, error: 'provider not found' };
+    if (provider.hostnames.length === 0) return { ok: false as const, error: 'no hostnames configured' };
+
+    const url = `https://${provider.hostnames[0]}/`;
+    const { url: nextUrl, init: nextInit } = injectAuth(provider, url, { method: 'GET' });
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(nextUrl, { ...nextInit, signal: controller.signal });
+      return { ok: true as const, status: response.status };
+    } catch (e: any) {
+      const message = e?.name === 'AbortError' ? 'timed out after 10s' : (e?.message ?? 'network error');
+      return { ok: false as const, error: message };
+    } finally {
+      clearTimeout(timer);
+    }
   });
 
   ipcMain.handle('app:fetch', async (_event, url: string, init?: RequestInit) =>
