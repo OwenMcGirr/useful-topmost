@@ -333,6 +333,7 @@ export default function Dashboard() {
         onClose={() => setSettingsOpen(false)}
         updateState={updateState}
         onCheckUpdates={() => void window.api.updates.checkNow().then(setUpdateState)}
+        onRestartUpdate={() => void window.api.updates.restart()}
       />
       <UpdatePrompt state={updateState} />
       {showWelcome && (

@@ -4,7 +4,15 @@ import { BTN } from './settingsStyles';
 interface Props {
   updateState: UpdateState;
   onCheckUpdates: () => void;
+  onRestartUpdate: () => void;
 }
+
+const PRIMARY_BTN: React.CSSProperties = {
+  ...BTN,
+  background: '#238636',
+  borderColor: '#238636',
+  color: '#fff'
+};
 
 function updateStatusText(state: UpdateState): string {
   switch (state.status) {
@@ -29,7 +37,7 @@ function updateStatusText(state: UpdateState): string {
   }
 }
 
-export default function UpdateSettings({ updateState, onCheckUpdates }: Props) {
+export default function UpdateSettings({ updateState, onCheckUpdates, onRestartUpdate }: Props) {
   return (
     <section>
       <h2 style={{ marginTop: 0, fontSize: 18 }}>Updates</h2>
@@ -38,7 +46,12 @@ export default function UpdateSettings({ updateState, onCheckUpdates }: Props) {
           <div style={{ fontSize: 14 }}>Release status</div>
           <div style={{ fontSize: 12, opacity: 0.7 }}>{updateStatusText(updateState)}</div>
         </div>
-        <button style={BTN} onClick={onCheckUpdates}>Check for updates</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button style={BTN} onClick={onCheckUpdates}>Check for updates</button>
+          {updateState.status === 'downloaded' && (
+            <button style={PRIMARY_BTN} onClick={onRestartUpdate}>Restart to update</button>
+          )}
+        </div>
       </div>
     </section>
   );
