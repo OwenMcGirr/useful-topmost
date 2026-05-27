@@ -216,6 +216,101 @@ describe('Tile', () => {
     expect(screen.getByRole('button', { name: /size 2×2/i })).toBeInTheDocument();
   });
 
+  it('geek-mode info button is hidden when geekMode is false', () => {
+    render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'live' }}
+        htmlUrl="file:///x"
+        widgetPreloadUrl=""
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+      />
+    );
+    expect(screen.queryByRole('button', { name: /data sources/i })).toBeNull();
+  });
+
+  it('geek-mode info button shows the popover with summary sources', async () => {
+    render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'live' }}
+        htmlUrl="file:///x"
+        widgetPreloadUrl=""
+        geekMode
+        summary={{ sources: ['Open-Meteo', 'Hacker News API'] }}
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /data sources/i }));
+
+    const dialog = await screen.findByRole('dialog', { name: /data sources/i });
+    expect(dialog).toHaveTextContent('Open-Meteo');
+    expect(dialog).toHaveTextContent('Hacker News API');
+  });
+
+  it('geek-mode popover shows fallback when no summary is recorded', async () => {
+    render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'live' }}
+        htmlUrl="file:///x"
+        widgetPreloadUrl=""
+        geekMode
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /data sources/i }));
+
+    expect(await screen.findByText(/no data sources recorded/i)).toBeInTheDocument();
+  });
+
+  it('geek-mode popover shows the no-external-sources message for empty sources', async () => {
+    render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'live' }}
+        htmlUrl="file:///x"
+        widgetPreloadUrl=""
+        geekMode
+        summary={{ sources: [] }}
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /data sources/i }));
+    expect(await screen.findByText(/uses no external sources/i)).toBeInTheDocument();
+  });
+
   it('renders a pinned indicator badge only when pinned', () => {
     const { container, rerender } = render(
       <Tile

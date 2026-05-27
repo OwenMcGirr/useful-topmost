@@ -22,6 +22,10 @@ function mockApi(initial: any[] = []) {
       test: vi.fn(async (_id: string) => ({ ok: true, status: 200 }) as any),
       lookupProvider: vi.fn(async (_query: string) => ({ ok: false, error: 'not mocked' }) as any),
       cancelLookup: vi.fn(async () => ({ ok: true }) as any)
+    },
+    prefs: {
+      get: vi.fn(async () => ({ geekMode: false })),
+      setGeekMode: vi.fn(async () => ({ ok: true }))
     }
   };
   return { api, state };
@@ -280,6 +284,24 @@ describe('SettingsModal', () => {
 
     await waitFor(() => expect(api.secrets.delete).toHaveBeenCalledWith('p1'));
     await waitFor(() => expect(state).toHaveLength(0));
+  });
+
+  it('Geek Mode section toggle hydrates from prefs and persists changes', async () => {
+    const { api } = mockApi([]);
+    api.prefs.get = vi.fn(async () => ({ geekMode: false }));
+    api.prefs.setGeekMode = vi.fn(async () => ({ ok: true }));
+    (window as any).api = api;
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /geek mode/i }));
+
+    const checkbox = await screen.findByLabelText(/show data source info/i) as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+
+    await userEvent.click(checkbox);
+
+    await waitFor(() => expect(api.prefs.setGeekMode).toHaveBeenCalledWith(true));
+    expect(checkbox.checked).toBe(true);
   });
 
   it('shows update status and calls the supplied update handler from the Updates section', async () => {

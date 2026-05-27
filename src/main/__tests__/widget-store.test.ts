@@ -143,6 +143,25 @@ describe('widget-store', () => {
     expect((await store.list())[0].size).toBe('large');
   });
 
+  it('sets and clears summary, surfacing it in list()', async () => {
+    const root = await freshRoot();
+    const store = createWidgetStore(root);
+    const uuid = await store.create('p');
+
+    expect((await store.list())[0].summary).toBeUndefined();
+
+    await store.setSummary(uuid, { sources: ['Open-Meteo', 'Hacker News API'] });
+    expect((await store.getMeta(uuid)).summary).toEqual({ sources: ['Open-Meteo', 'Hacker News API'] });
+    expect((await store.list())[0].summary).toEqual({ sources: ['Open-Meteo', 'Hacker News API'] });
+
+    await store.setSummary(uuid, { sources: [] });
+    expect((await store.getMeta(uuid)).summary).toEqual({ sources: [] });
+
+    await store.setSummary(uuid, undefined);
+    expect((await store.getMeta(uuid)).summary).toBeUndefined();
+    expect((await store.list())[0].summary).toBeUndefined();
+  });
+
   it('sets and clears selectedProviderIds, surfacing them in list()', async () => {
     const root = await freshRoot();
     const store = createWidgetStore(root);

@@ -27,6 +27,7 @@ interface TileEntry {
   pinned?: boolean;
   size?: TileSize;
   selectedProviderIds?: string[];
+  summary?: { sources: string[] };
 }
 
 const SIZE_CYCLE: Record<TileSize, TileSize> = {
@@ -107,6 +108,7 @@ export default function Dashboard() {
   const [widgetPreload, setWidgetPreload] = useState<string>('');
   const [onboardingDismissed, setOnboardingDismissed] = useState<boolean | null>(null);
   const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' });
+  const [geekMode, setGeekMode] = useState(false);
   const editBuilds = useRef<Set<string>>(new Set());
   const gridRef = useRef<HTMLDivElement | null>(null);
 
@@ -170,6 +172,15 @@ export default function Dashboard() {
     return window.api.updates.onState(setUpdateState);
   }, []);
 
+  const refreshGeekMode = useCallback(async () => {
+    const prefs = await window.api.prefs.get();
+    setGeekMode(prefs.geekMode);
+  }, []);
+
+  useEffect(() => {
+    void refreshGeekMode();
+  }, [refreshGeekMode]);
+
   useEffect(() => {
     const isTyping = () => {
       const el = document.activeElement;
@@ -228,7 +239,8 @@ export default function Dashboard() {
         revision: 0,
         pinned: w.pinned === true,
         size: w.size,
-        selectedProviderIds: w.selectedProviderIds
+        selectedProviderIds: w.selectedProviderIds,
+        summary: w.summary
       })));
       setTiles(entries);
     })();
@@ -238,8 +250,13 @@ export default function Dashboard() {
     const offReady = window.api.onWidgetReady(async (uuid) => {
       const url = await window.api.htmlUrl(uuid);
       const busted = cacheBust(url);
+      let summary: { sources: string[] } | undefined;
+      try {
+        const meta = await window.api.getWidgetMeta(uuid);
+        summary = (meta as any).summary;
+      } catch { /* ignore */ }
       setTiles((prev) => prev.map((t) => t.uuid === uuid
-        ? { ...t, state: { kind: 'live' as const }, ...busted }
+        ? { ...t, state: { kind: 'live' as const }, ...busted, summary: summary ?? t.summary }
         : t));
       editBuilds.current.delete(uuid);
     });
@@ -438,6 +455,8 @@ export default function Dashboard() {
                 widgetPreloadUrl={widgetPreload}
                 pinned={t.pinned}
                 size={t.size}
+                geekMode={geekMode}
+                summary={t.summary}
                 onRefresh={() => {}}
                 onDismiss={() => handleDelete(t.uuid)}
                 onEditChat={() => handleEditChat(t)}
@@ -474,7 +493,7 @@ export default function Dashboard() {
       />
       <SettingsModal
         open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+        onClose={() => { setSettingsOpen(false); void refreshGeekMode(); }}
         updateState={updateState}
         onCheckUpdates={() => void window.api.updates.checkNow().then(setUpdateState)}
         onRestartUpdate={() => void window.api.updates.restart()}

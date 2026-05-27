@@ -5,8 +5,9 @@ import type { IpcMain, WebContents } from 'electron';
 import type { WidgetStore } from './widget-store';
 import type { SecretsStore, Provider } from './secrets-store';
 import type { OnboardingStore } from './onboarding-store';
+import type { PrefsStore } from './prefs-store';
 import type { runCodex as RunCodexFn } from './codex-runner';
-import { PROVIDER_LOOKUP_OUTPUT_FILE, buildChatPrompt, buildPrompt, buildProviderLookupPrompt } from './codex-prompt';
+import { PROVIDER_LOOKUP_OUTPUT_FILE, WIDGET_SUMMARY_OUTPUT_FILE, buildChatPrompt, buildPrompt, buildProviderLookupPrompt } from './codex-prompt';
 import { appFetch, filterProviders, injectAuth } from './proxy';
 import { runLocalExec, widgetCwdFromSenderUrl } from './local-exec';
 
@@ -139,13 +140,27 @@ function chatMessage(role: 'user' | 'status', text: string, status?: 'building' 
   };
 }
 
+async function readWidgetSummary(dir: string): Promise<{ sources: string[] } | undefined> {
+  try {
+    const raw = await fs.readFile(path.join(dir, WIDGET_SUMMARY_OUTPUT_FILE), 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return undefined;
+    const sources = (parsed as any).sources;
+    if (!Array.isArray(sources) || !sources.every((s: any) => typeof s === 'string')) return undefined;
+    return { sources };
+  } catch {
+    return undefined;
+  }
+}
+
 export function registerIpc(
   ipcMain: IpcMain,
   widgets: WidgetStore,
   secrets: SecretsStore,
   onboarding: OnboardingStore,
   runCodex: typeof RunCodexFn,
-  getSender: GetSender
+  getSender: GetSender,
+  prefs: PrefsStore
 ): void {
   const inflight = new Map<string, AbortController>();
 
@@ -176,6 +191,8 @@ export function registerIpc(
       });
       releaseRun(uuid, controller);
       if (result.ok) {
+        const summary = await readWidgetSummary(widgets.dir(uuid));
+        if (summary) await widgets.setSummary(uuid, summary);
         sender.send('widget:ready', { uuid });
       } else {
         sender.send('widget:error', { uuid, error: result.error ?? 'unknown' });
@@ -209,6 +226,8 @@ export function registerIpc(
       });
       releaseRun(uuid, controller);
       if (result.ok) {
+        const summary = await readWidgetSummary(widgets.dir(uuid));
+        if (summary) await widgets.setSummary(uuid, summary);
         await widgets.replaceChatMessage(uuid, status.id, {
           ...status,
           text: 'Updated',
@@ -265,6 +284,8 @@ export function registerIpc(
           const stagedHtml = await fs.readFile(path.join(stagingDir, 'index.html'), 'utf8');
           await widgets.replaceWidgetHtml(uuid, stagedHtml);
           await widgets.updatePrompt(uuid, trimmed);
+          const summary = await readWidgetSummary(stagingDir);
+          if (summary) await widgets.setSummary(uuid, summary);
           await widgets.replaceChatMessage(uuid, status.id, {
             ...status,
             text: 'Updated',
@@ -500,5 +521,15 @@ export function registerIpc(
   ipcMain.handle('onboarding:dismiss', async () => {
     await onboarding.dismiss();
     return { ok: true };
+  });
+
+  ipcMain.handle('prefs:get', async () => prefs.get());
+
+  ipcMain.handle('prefs:setGeekMode', async (_event, value: unknown) => {
+    if (typeof value !== 'boolean') {
+      return { ok: false as const, error: 'value must be a boolean' };
+    }
+    await prefs.setGeekMode(value);
+    return { ok: true as const };
   });
 }

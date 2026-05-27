@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { createWidgetStore } from '../widget-store';
 import { createSecretsStore } from '../secrets-store';
 import { createOnboardingStore } from '../onboarding-store';
+import { createPrefsStore } from '../prefs-store';
 import { parseProviderLookupResponse, registerIpc } from '../ipc';
 
 function fakeIpcMain() {
@@ -45,7 +46,7 @@ describe('ipc', () => {
       return { ok: true, path: path.join(cwd, 'index.html') };
     });
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const { uuid } = await ipc.invoke('widget:create', 'p');
     // Wait for the codex run + ready event to flush.
@@ -64,12 +65,95 @@ describe('ipc', () => {
     const sender = fakeSender();
     const runCodex = vi.fn(async () => ({ ok: false, error: 'boom' }));
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const { uuid } = await ipc.invoke('widget:create', 'p');
     await new Promise((r) => setTimeout(r, 10));
 
     expect(sender.sent).toContainEqual({ channel: 'widget:error', payload: { uuid, error: 'boom' } });
+  });
+
+  it('widget:create persists summary.json sidecar to meta.summary on success', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn(async ({ cwd }: any) => {
+      await fs.writeFile(path.join(cwd, 'index.html'), '<html></html>');
+      await fs.writeFile(path.join(cwd, 'summary.json'), JSON.stringify({ sources: ['Open-Meteo'] }));
+      return { ok: true };
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const { uuid } = await ipc.invoke('widget:create', 'show weather');
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect((await store.getMeta(uuid)).summary).toEqual({ sources: ['Open-Meteo'] });
+  });
+
+  it('widget:create does not fail when summary.json is missing; meta.summary stays undefined', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn(async ({ cwd }: any) => {
+      await fs.writeFile(path.join(cwd, 'index.html'), '<html></html>');
+      // no summary.json
+      return { ok: true };
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const { uuid } = await ipc.invoke('widget:create', 'p');
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(sender.sent).toContainEqual({ channel: 'widget:ready', payload: { uuid } });
+    expect((await store.getMeta(uuid)).summary).toBeUndefined();
+  });
+
+  it('widget:create silently ignores a malformed summary.json', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn(async ({ cwd }: any) => {
+      await fs.writeFile(path.join(cwd, 'index.html'), '<html></html>');
+      await fs.writeFile(path.join(cwd, 'summary.json'), 'not json');
+      return { ok: true };
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const { uuid } = await ipc.invoke('widget:create', 'p');
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(sender.sent).toContainEqual({ channel: 'widget:ready', payload: { uuid } });
+    expect((await store.getMeta(uuid)).summary).toBeUndefined();
+  });
+
+  it('prefs:get returns geekMode:false by default; prefs:setGeekMode persists', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    expect(await ipc.invoke('prefs:get')).toEqual({ geekMode: false });
+
+    const ok = await ipc.invoke('prefs:setGeekMode', true);
+    expect(ok).toEqual({ ok: true });
+    expect(await ipc.invoke('prefs:get')).toEqual({ geekMode: true });
+
+    const bad = await ipc.invoke('prefs:setGeekMode', 'yes');
+    expect(bad.ok).toBe(false);
+    expect((await ipc.invoke('prefs:get')).geekMode).toBe(true);
   });
 
   it('widget:setProviders persists known ids and rejects unknown ones', async () => {
@@ -80,7 +164,7 @@ describe('ipc', () => {
     const sender = fakeSender();
     const runCodex = vi.fn(async () => ({ ok: true }));
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     await ipc.invoke('secrets:save', {
       id: 'p1', name: 'P1', hostnames: ['p1.example'],
@@ -115,7 +199,7 @@ describe('ipc', () => {
       return { ok: true };
     });
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     await ipc.invoke('secrets:save', {
       id: 'p1', name: 'OpenWeather', hostnames: ['api.openweathermap.org'],
@@ -149,7 +233,7 @@ describe('ipc', () => {
       return new Response('', { status: 200 });
     }) as any;
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     try {
       await ipc.invoke('secrets:save', {
@@ -186,7 +270,7 @@ describe('ipc', () => {
       });
     });
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const { uuid } = await ipc.invoke('widget:create', 'p');
     await new Promise((r) => setTimeout(r, 10));
@@ -206,7 +290,7 @@ describe('ipc', () => {
     const sender = fakeSender();
     const runCodex = vi.fn();
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const result = await ipc.invoke('widget:cancel', 'nope');
     expect(result.ok).toBe(false);
@@ -225,7 +309,7 @@ describe('ipc', () => {
       return { ok: true, path: path.join(cwd, 'index.html') };
     });
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const { uuid } = await ipc.invoke('widget:chatStart', 'make a timer');
     await new Promise((r) => setTimeout(r, 10));
@@ -243,7 +327,7 @@ describe('ipc', () => {
     const sender = fakeSender();
     const runCodex = vi.fn(async () => ({ ok: false, error: 'bad prompt' }));
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const { uuid } = await ipc.invoke('widget:chatStart', 'make a timer');
     await new Promise((r) => setTimeout(r, 10));
@@ -269,7 +353,7 @@ describe('ipc', () => {
       return { ok: true, path: path.join(cwd, 'index.html') };
     });
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     expect(await ipc.invoke('widget:chatSend', uuid, 'make it blue')).toEqual({ ok: true });
     await waitForSent(sender, { channel: 'widget:ready', payload: { uuid } });
@@ -289,7 +373,7 @@ describe('ipc', () => {
     await store.replaceWidgetHtml(uuid, '<html>old</html>');
     const runCodex = vi.fn(async () => ({ ok: false, error: 'nope' }));
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     expect(await ipc.invoke('widget:chatSend', uuid, 'break it')).toEqual({ ok: true });
     await waitForSent(sender, { channel: 'widget:error', payload: { uuid, error: 'nope' } });
@@ -311,7 +395,7 @@ describe('ipc', () => {
       return { ok: true, path: path.join(cwd, 'index.html') };
     });
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
     const { uuid } = await ipc.invoke('widget:create', 'p');
     await new Promise((r) => setTimeout(r, 10));
 
@@ -331,7 +415,7 @@ describe('ipc', () => {
       return { ok: true, path: path.join(cwd, 'index.html') };
     });
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
     await ipc.invoke('widget:create', 'first');
     await new Promise((r) => setTimeout(r, 10));
 
@@ -350,7 +434,7 @@ describe('ipc', () => {
     const uuid = await store.create('first');
     await store.setPinned(uuid, true);
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const list = await ipc.invoke('widget:list');
     expect(list).toEqual([expect.objectContaining({ uuid, pinned: true })]);
@@ -365,7 +449,7 @@ describe('ipc', () => {
     const runCodex = vi.fn();
     const uuid = await store.create('first');
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     expect(await ipc.invoke('widget:setPinned', uuid, 'yes')).toEqual({ ok: true });
     expect((await store.getMeta(uuid)).pinned).toBe(true);
@@ -384,7 +468,7 @@ describe('ipc', () => {
     const uuid = await store.create('first');
     await fs.mkdir(path.join(store.widgetsRoot(), '.staging', 'draft'), { recursive: true });
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const list = await ipc.invoke('widget:list');
     expect(list.map((w: any) => w.uuid)).toEqual([uuid]);
@@ -399,7 +483,7 @@ describe('ipc', () => {
     const sender = fakeSender();
     const runCodex = vi.fn();
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const provider = {
       id: 'p1',
@@ -426,7 +510,7 @@ describe('ipc', () => {
     const sender = fakeSender();
     const runCodex = vi.fn();
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const result = await ipc.invoke('secrets:save', {
       id: 'p1',
@@ -449,7 +533,7 @@ describe('ipc', () => {
     const sender = fakeSender();
     const runCodex = vi.fn();
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const provider = {
       id: 'p1',
@@ -476,7 +560,7 @@ describe('ipc', () => {
     const sender = fakeSender();
     const runCodex = vi.fn();
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const result = await ipc.invoke('secrets:save', {
       id: 'fresh',
@@ -498,7 +582,7 @@ describe('ipc', () => {
     const sender = fakeSender();
     const runCodex = vi.fn();
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     await ipc.invoke('secrets:save', {
       id: 'p1', name: 'X', hostnames: ['x.com'],
@@ -533,7 +617,7 @@ describe('ipc', () => {
       return { ok: true };
     });
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const result = await ipc.invoke('secrets:lookupProvider', 'Stripe');
     expect(result).toEqual({
@@ -560,7 +644,7 @@ describe('ipc', () => {
       return { ok: true };
     });
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const result = await ipc.invoke('secrets:lookupProvider', 'made-up API');
     expect(result.ok).toBe(false);
@@ -582,7 +666,7 @@ describe('ipc', () => {
       });
     });
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const inflight = ipc.invoke('secrets:lookupProvider', 'Stripe');
     await new Promise((r) => setTimeout(r, 10));
@@ -604,7 +688,7 @@ describe('ipc', () => {
     const sender = fakeSender();
     const runCodex = vi.fn();
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const result = await ipc.invoke('secrets:lookupProvider', '   ');
     expect(result.ok).toBe(false);
@@ -675,7 +759,7 @@ describe('ipc', () => {
       return new Response('', { status: 200 });
     }) as any;
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     try {
       await ipc.invoke('secrets:save', {
@@ -704,7 +788,7 @@ describe('ipc', () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(async () => { throw new Error('getaddrinfo ENOTFOUND'); }) as any;
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     try {
       await ipc.invoke('secrets:save', {
@@ -730,7 +814,7 @@ describe('ipc', () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(async () => new Response('OK', { status: 200, headers: { 'x-h': '1' } })) as any;
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     try {
       const env = await ipc.invoke('app:fetch', 'https://example.com/');
@@ -750,7 +834,7 @@ describe('ipc', () => {
     const uuid = await store.create('run gh');
     const htmlPath = store.htmlPath(uuid);
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const result = await ipc.invokeWithEvent(
       'app:exec',
@@ -776,7 +860,7 @@ describe('ipc', () => {
     const runCodex = vi.fn();
     const outsideHtml = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'outside-widget-')), 'index.html');
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const result = await ipc.invokeWithEvent(
       'app:exec',
@@ -802,7 +886,7 @@ describe('ipc', () => {
     const sender = fakeSender();
     const runCodex = vi.fn();
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const result = await ipc.invokeWithEvent(
       'app:exec',
@@ -824,7 +908,7 @@ describe('ipc', () => {
     const runCodex = vi.fn();
     const malformed = path.join(store.widgetsRoot(), 'abc', 'nested', 'index.html');
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const result = await ipc.invokeWithEvent(
       'app:exec',
@@ -853,7 +937,7 @@ describe('ipc', () => {
       auth: { type: 'query', param: 'appid' }, value: 'SECRET'
     });
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
     await ipc.invoke('widget:create', 'show weather');
     await new Promise((r) => setTimeout(r, 10));
 
@@ -872,7 +956,7 @@ describe('ipc', () => {
     const sender = fakeSender();
     const runCodex = vi.fn();
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const url = await ipc.invoke('app:widgetPreloadUrl');
     expect(typeof url).toBe('string');
@@ -889,7 +973,7 @@ describe('ipc', () => {
     const sender = fakeSender();
     const runCodex = vi.fn();
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     expect(await ipc.invoke('onboarding:get')).toEqual({ dismissed: false });
   });
@@ -903,7 +987,7 @@ describe('ipc', () => {
     const sender = fakeSender();
     const runCodex = vi.fn();
 
-    registerIpc(ipc as any, store, secrets, onboarding, runCodex as any, () => sender as any);
+    registerIpc(ipc as any, store, secrets, onboarding, runCodex as any, () => sender as any, createPrefsStore(root));
 
     const result = await ipc.invoke('onboarding:dismiss');
     expect(result).toEqual({ ok: true });
