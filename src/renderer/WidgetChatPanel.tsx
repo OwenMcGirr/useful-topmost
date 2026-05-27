@@ -16,6 +16,7 @@ interface WidgetChatPanelProps {
   onClose: () => void;
   onCreated: (uuid: string, prompt: string, selectedProviderIds: string[] | undefined) => void;
   onSent: (uuid: string, prompt: string) => void;
+  onDeleted: (uuid: string) => void;
 }
 
 const PANEL: React.CSSProperties = {
@@ -128,7 +129,8 @@ export default function WidgetChatPanel({
   widgetPreloadUrl,
   onClose,
   onCreated,
-  onSent
+  onSent,
+  onDeleted
 }: WidgetChatPanelProps) {
   const [value, setValue] = useState(initialMessage);
   const [messages, setMessages] = useState<WidgetChatMessage[]>([]);
@@ -138,6 +140,17 @@ export default function WidgetChatPanel({
   const [building, setBuilding] = useState(false);
   const [providers, setProviders] = useState<PublicProvider[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  useEffect(() => {
+    if (!confirmingDelete) return;
+    const timer = window.setTimeout(() => setConfirmingDelete(false), 3000);
+    return () => window.clearTimeout(timer);
+  }, [confirmingDelete]);
+
+  useEffect(() => {
+    if (!open) setConfirmingDelete(false);
+  }, [open]);
 
   const title = mode === 'create' && !currentUuid ? 'New widget' : 'Edit widget';
   const canSend = value.trim().length > 0 && !submitting && !building;
@@ -228,6 +241,18 @@ export default function WidgetChatPanel({
     });
   };
 
+  const handleDelete = async () => {
+    if (!currentUuid) return;
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      return;
+    }
+    await window.api.deleteWidget(currentUuid);
+    onDeleted(currentUuid);
+    setConfirmingDelete(false);
+    onClose();
+  };
+
   if (!open) return null;
 
   const send = async () => {
@@ -269,7 +294,17 @@ export default function WidgetChatPanel({
     <aside aria-label="Widget chat" style={PANEL}>
       <div style={HEADER}>
         <h2 style={{ margin: 0, fontSize: 18 }}>{title}</h2>
-        <button style={BTN} onClick={onClose}>Close</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {currentUuid && (
+            <button
+              style={confirmingDelete ? { ...BTN, color: '#f85149', borderColor: '#f85149' } : BTN}
+              onClick={() => void handleDelete()}
+            >
+              {confirmingDelete ? 'click to confirm' : 'Delete widget'}
+            </button>
+          )}
+          <button style={BTN} onClick={onClose}>Close</button>
+        </div>
       </div>
 
       <div style={PREVIEW}>

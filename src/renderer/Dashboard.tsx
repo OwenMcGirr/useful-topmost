@@ -488,6 +488,7 @@ export default function Dashboard() {
         initialMessage={chat.open ? chat.initialMessage : undefined}
         widgetPreloadUrl={widgetPreload}
         onClose={() => setChat({ open: false })}
+        onDeleted={(uuid) => setTiles((prev) => prev.filter((t) => t.uuid !== uuid))}
         onCreated={handleChatCreated}
         onSent={handleChatSent}
       />
