@@ -267,7 +267,8 @@ export default function WidgetChatPanel({
             if (e.key === 'Escape') onClose();
           }}
         />
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+          <span style={{ fontSize: 11, color: '#8b949e' }}>Ctrl+Enter to send</span>
           <button style={canSend ? BTN_PRIMARY : { ...BTN_PRIMARY, opacity: 0.5, cursor: 'not-allowed' }} disabled={!canSend} onClick={() => void send()}>
             Send
           </button>
