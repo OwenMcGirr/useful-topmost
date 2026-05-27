@@ -31,6 +31,20 @@ export interface WidgetChatMessage {
 interface SaveResult { ok: boolean; error?: string }
 interface ChatResult { ok: boolean; error?: string }
 
+export type LookupProviderResult =
+  | {
+      ok: true;
+      provider: {
+        name: string;
+        hostnames: string[];
+        auth:
+          | { type: 'query'; param: string }
+          | { type: 'header'; name: string; scheme: 'none' | 'bearer' | 'basic' | 'token' };
+        source: string;
+      };
+    }
+  | { ok: false; error: string };
+
 const api = {
   createWidget: (prompt: string) => ipcRenderer.invoke('widget:create', prompt) as Promise<{ uuid: string }>,
   chatStartWidget: (message: string) =>
@@ -68,7 +82,9 @@ const api = {
       ipcRenderer.invoke('secrets:save', p) as Promise<SaveResult>,
     delete: (id: string) => ipcRenderer.invoke('secrets:delete', id) as Promise<{ ok: true }>,
     test: (id: string) =>
-      ipcRenderer.invoke('secrets:test', id) as Promise<{ ok: true; status: number } | { ok: false; error: string }>
+      ipcRenderer.invoke('secrets:test', id) as Promise<{ ok: true; status: number } | { ok: false; error: string }>,
+    lookupProvider: (query: string) =>
+      ipcRenderer.invoke('secrets:lookupProvider', query) as Promise<LookupProviderResult>
   },
   onboarding: {
     get: () => ipcRenderer.invoke('onboarding:get') as Promise<OnboardingState>,

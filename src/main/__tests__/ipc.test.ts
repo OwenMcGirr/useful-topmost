@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { createWidgetStore } from '../widget-store';
 import { createSecretsStore } from '../secrets-store';
 import { createOnboardingStore } from '../onboarding-store';
-import { registerIpc } from '../ipc';
+import { parseProviderLookupResponse, registerIpc } from '../ipc';
 
 function fakeIpcMain() {
   const handlers = new Map<string, (...args: any[]) => any>();
@@ -408,6 +408,123 @@ describe('ipc', () => {
     await ipc.invoke('secrets:delete', 'p1');
 
     expect(await ipc.invoke('secrets:list')).toEqual([]);
+  });
+
+  it('secrets:lookupProvider runs codex with the lookup prompt and parses the JSON file', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+
+    const runCodex = vi.fn(async ({ cwd, prompt, outputFile }: any) => {
+      expect(outputFile).toBe('provider.json');
+      expect(prompt).toContain('browser_use');
+      expect(prompt).toContain('Stripe');
+      await fs.writeFile(path.join(cwd, outputFile), JSON.stringify({
+        ok: true,
+        name: 'Stripe',
+        hostnames: ['api.stripe.com'],
+        auth: { type: 'header', name: 'Authorization', scheme: 'bearer' },
+        source: 'https://stripe.com/docs/api/authentication'
+      }));
+      return { ok: true };
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    const result = await ipc.invoke('secrets:lookupProvider', 'Stripe');
+    expect(result).toEqual({
+      ok: true,
+      provider: {
+        name: 'Stripe',
+        hostnames: ['api.stripe.com'],
+        auth: { type: 'header', name: 'Authorization', scheme: 'bearer' },
+        source: 'https://stripe.com/docs/api/authentication'
+      }
+    });
+    expect(runCodex).toHaveBeenCalled();
+  });
+
+  it('secrets:lookupProvider surfaces a codex-reported error', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+
+    const runCodex = vi.fn(async ({ cwd, outputFile }: any) => {
+      await fs.writeFile(path.join(cwd, outputFile), JSON.stringify({ ok: false, error: 'no official docs' }));
+      return { ok: true };
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    const result = await ipc.invoke('secrets:lookupProvider', 'made-up API');
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/no official docs/);
+  });
+
+  it('secrets:lookupProvider rejects an empty query without invoking codex', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    const result = await ipc.invoke('secrets:lookupProvider', '   ');
+    expect(result.ok).toBe(false);
+    expect(runCodex).not.toHaveBeenCalled();
+  });
+
+  it('parseProviderLookupResponse rejects payloads missing the source URL', () => {
+    const result = parseProviderLookupResponse(JSON.stringify({
+      ok: true,
+      name: 'X',
+      hostnames: ['x.com'],
+      auth: { type: 'query', param: 'k' }
+    }));
+    expect(result.ok).toBe(false);
+    expect((result as any).error).toMatch(/source/);
+  });
+
+  it('parseProviderLookupResponse rejects an unknown header scheme', () => {
+    const result = parseProviderLookupResponse(JSON.stringify({
+      ok: true,
+      name: 'X',
+      hostnames: ['x.com'],
+      auth: { type: 'header', name: 'Authorization', scheme: 'weird' },
+      source: 'https://example.com/docs'
+    }));
+    expect(result.ok).toBe(false);
+    expect((result as any).error).toMatch(/scheme/);
+  });
+
+  it('parseProviderLookupResponse rejects hostnames that include a path', () => {
+    const result = parseProviderLookupResponse(JSON.stringify({
+      ok: true,
+      name: 'X',
+      hostnames: ['api.example.com/v1'],
+      auth: { type: 'query', param: 'k' },
+      source: 'https://example.com/docs'
+    }));
+    expect(result.ok).toBe(false);
+    expect((result as any).error).toMatch(/hostnames/);
+  });
+
+  it('parseProviderLookupResponse passes through a clean query-auth response', () => {
+    const result = parseProviderLookupResponse(JSON.stringify({
+      ok: true,
+      name: 'OpenWeather',
+      hostnames: ['api.openweathermap.org'],
+      auth: { type: 'query', param: 'appid' },
+      source: 'https://openweathermap.org/appid'
+    }));
+    expect(result.ok).toBe(true);
+    expect((result as any).provider.auth).toEqual({ type: 'query', param: 'appid' });
   });
 
   it('secrets:test issues a GET to the first hostname with auth injected', async () => {

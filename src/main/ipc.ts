@@ -6,7 +6,7 @@ import type { WidgetStore } from './widget-store';
 import type { SecretsStore, Provider } from './secrets-store';
 import type { OnboardingStore } from './onboarding-store';
 import type { runCodex as RunCodexFn } from './codex-runner';
-import { buildChatPrompt, buildPrompt } from './codex-prompt';
+import { PROVIDER_LOOKUP_OUTPUT_FILE, buildChatPrompt, buildPrompt, buildProviderLookupPrompt } from './codex-prompt';
 import { appFetch, injectAuth } from './proxy';
 import { runLocalExec, widgetCwdFromSenderUrl } from './local-exec';
 
@@ -45,6 +45,88 @@ function validateProvider(p: any): SaveResultErr | null {
   }
   if (typeof p.value !== 'string') return { ok: false, error: 'value must be a string' };
   return null;
+}
+
+export interface ProviderLookupResultOk {
+  ok: true;
+  provider: {
+    name: string;
+    hostnames: string[];
+    auth:
+      | { type: 'query'; param: string }
+      | { type: 'header'; name: string; scheme: 'none' | 'bearer' | 'basic' | 'token' };
+    source: string;
+  };
+}
+export interface ProviderLookupResultErr { ok: false; error: string }
+export type ProviderLookupResult = ProviderLookupResultOk | ProviderLookupResultErr;
+
+function isHttpUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || !value) return false;
+  try {
+    const u = new URL(value);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export function parseProviderLookupResponse(raw: string): ProviderLookupResult {
+  let parsed: any;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { ok: false, error: 'codex response was not valid JSON' };
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    return { ok: false, error: 'codex response was not a JSON object' };
+  }
+  if (parsed.ok === false) {
+    const errorText = typeof parsed.error === 'string' && parsed.error ? parsed.error : 'codex reported failure with no reason';
+    return { ok: false, error: errorText };
+  }
+  if (parsed.ok !== true) {
+    return { ok: false, error: 'codex response missing ok flag' };
+  }
+  if (typeof parsed.name !== 'string' || !parsed.name.trim()) {
+    return { ok: false, error: 'codex response missing name' };
+  }
+  if (!Array.isArray(parsed.hostnames) || parsed.hostnames.length === 0 ||
+      !parsed.hostnames.every((h: any) => typeof h === 'string' && h.trim() && !/[/\s]/.test(h))) {
+    return { ok: false, error: 'codex response missing valid hostnames' };
+  }
+  if (!parsed.auth || typeof parsed.auth !== 'object') {
+    return { ok: false, error: 'codex response missing auth' };
+  }
+  if (parsed.auth.type === 'query') {
+    if (typeof parsed.auth.param !== 'string' || !parsed.auth.param.trim()) {
+      return { ok: false, error: 'codex response query auth missing param' };
+    }
+  } else if (parsed.auth.type === 'header') {
+    if (typeof parsed.auth.name !== 'string' || !parsed.auth.name.trim()) {
+      return { ok: false, error: 'codex response header auth missing name' };
+    }
+    if (!['none', 'bearer', 'basic', 'token'].includes(parsed.auth.scheme)) {
+      return { ok: false, error: 'codex response header auth scheme must be none|bearer|basic|token' };
+    }
+  } else {
+    return { ok: false, error: 'codex response auth.type must be "query" or "header"' };
+  }
+  if (!isHttpUrl(parsed.source)) {
+    return { ok: false, error: 'codex response missing valid source URL' };
+  }
+
+  return {
+    ok: true,
+    provider: {
+      name: parsed.name.trim(),
+      hostnames: parsed.hostnames.map((h: string) => h.trim()),
+      auth: parsed.auth.type === 'query'
+        ? { type: 'query', param: parsed.auth.param.trim() }
+        : { type: 'header', name: parsed.auth.name.trim(), scheme: parsed.auth.scheme },
+      source: parsed.source
+    }
+  };
 }
 
 function chatMessage(role: 'user' | 'status', text: string, status?: 'building' | 'updated' | 'failed') {
@@ -269,6 +351,31 @@ export function registerIpc(
   ipcMain.handle('secrets:delete', async (_event, id: string) => {
     await secrets.delete(id);
     return { ok: true };
+  });
+
+  ipcMain.handle('secrets:lookupProvider', async (_event, query: string): Promise<ProviderLookupResult> => {
+    const trimmed = typeof query === 'string' ? query.trim() : '';
+    if (!trimmed) return { ok: false, error: 'query is required' };
+
+    const scratch = path.join(widgets.widgetsRoot(), '.lookup', randomUUID());
+    await fs.mkdir(scratch, { recursive: true });
+    try {
+      const result = await runCodex({
+        prompt: buildProviderLookupPrompt(trimmed),
+        cwd: scratch,
+        outputFile: PROVIDER_LOOKUP_OUTPUT_FILE,
+        timeoutMs: 120_000
+      });
+      if (!result.ok) {
+        return { ok: false, error: result.error ?? 'codex run failed' };
+      }
+      const raw = await fs.readFile(path.join(scratch, PROVIDER_LOOKUP_OUTPUT_FILE), 'utf8');
+      return parseProviderLookupResponse(raw);
+    } catch (e: any) {
+      return { ok: false, error: e?.message ?? 'lookup failed' };
+    } finally {
+      await fs.rm(scratch, { recursive: true, force: true });
+    }
   });
 
   ipcMain.handle('secrets:test', async (_event, id: string) => {

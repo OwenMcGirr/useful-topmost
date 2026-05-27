@@ -14,6 +14,8 @@ export interface CodexRunOptions {
   timeoutMs?: number;
   logPath?: string;
   signal?: AbortSignal;
+  /** Filename Codex is expected to write inside cwd. Defaults to index.html. */
+  outputFile?: string;
   /** Injected for testing */
   spawnFn?: typeof nodeSpawn;
 }
@@ -22,8 +24,8 @@ export const DEFAULT_CODEX_TIMEOUT_MS = 600_000;
 const POLL_INTERVAL_MS = 500;
 
 export async function runCodex(opts: CodexRunOptions): Promise<CodexRunResult> {
-  const { prompt, cwd, timeoutMs = DEFAULT_CODEX_TIMEOUT_MS, logPath, signal, spawnFn = nodeSpawn } = opts;
-  const outputPath = path.join(cwd, 'index.html');
+  const { prompt, cwd, timeoutMs = DEFAULT_CODEX_TIMEOUT_MS, logPath, signal, outputFile = 'index.html', spawnFn = nodeSpawn } = opts;
+  const outputPath = path.join(cwd, outputFile);
 
   return new Promise<CodexRunResult>((resolve) => {
     // Read prompt from stdin (the trailing '-') so user-supplied text never

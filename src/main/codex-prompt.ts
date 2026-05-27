@@ -69,6 +69,52 @@ export function buildPrompt(userPrompt: string, providers: PublicProviderForProm
   return CODEX_SYSTEM_PROMPT + providersBlock(providers) + "The user's request:\n" + userPrompt;
 }
 
+export const PROVIDER_LOOKUP_OUTPUT_FILE = 'provider.json';
+
+export function buildProviderLookupPrompt(query: string): string {
+  return [
+    'You are looking up the authentication configuration for a public HTTP API.',
+    '',
+    'You MUST use your browser_use tool to fetch the official documentation for the API named below.',
+    'Do not answer from training-data recall. If you cannot find the official documentation via the',
+    'browser, write an error response (see the error shape below) — do not guess.',
+    '',
+    `API to look up: ${query}`,
+    '',
+    `Write exactly one file named ${PROVIDER_LOOKUP_OUTPUT_FILE} to the current working directory.`,
+    'The file must contain a single JSON object (no surrounding prose, no Markdown fences).',
+    '',
+    'On success, the JSON must match one of these two shapes:',
+    '',
+    'Header authentication:',
+    '{',
+    '  "ok": true,',
+    '  "name": "<short human-readable name>",',
+    '  "hostnames": ["<host1>", "<host2>", ...],',
+    '  "auth": { "type": "header", "name": "<HTTP header name>", "scheme": "none|bearer|basic|token" },',
+    '  "source": "<URL of the official documentation page you consulted>"',
+    '}',
+    '',
+    'Query-string authentication:',
+    '{',
+    '  "ok": true,',
+    '  "name": "<short human-readable name>",',
+    '  "hostnames": ["<host1>"],',
+    '  "auth": { "type": "query", "param": "<query-string parameter name>" },',
+    '  "source": "<URL of the official documentation page you consulted>"',
+    '}',
+    '',
+    'On failure (no official docs found, ambiguous request, API does not exist):',
+    '{ "ok": false, "error": "<one-sentence reason>" }',
+    '',
+    'Rules:',
+    '- hostnames must be bare hostnames (no scheme, no path, no trailing slash). For example: "api.stripe.com".',
+    '- scheme is "bearer" / "basic" / "token" when the auth header value is prefixed with that word and a space (e.g. "Bearer sk_..."); "none" when the value is the raw key.',
+    '- source must be a URL on the API vendor\'s own domain or their official documentation host.',
+    '- Output JSON only. No commentary, no Markdown fences, no extra files.'
+  ].join('\n');
+}
+
 export function buildChatPrompt({
   messages,
   currentHtml = null,
