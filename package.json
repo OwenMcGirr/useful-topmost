@@ -60,7 +60,6 @@
     },
     "win": {
       "icon": "resources/icon.ico",
-      "signAndEditExecutable": false,
       "target": [
         "nsis"
       ]
