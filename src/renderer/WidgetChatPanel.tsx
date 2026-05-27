@@ -19,6 +19,16 @@ interface WidgetChatPanelProps {
   onDeleted: (uuid: string) => void;
 }
 
+const SCRIM: React.CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  background: 'rgba(0, 0, 0, 0.3)',
+  backdropFilter: 'blur(8px)',
+  WebkitBackdropFilter: 'blur(8px)',
+  zIndex: 79,
+  pointerEvents: 'none'
+};
+
 const PANEL: React.CSSProperties = {
   position: 'fixed',
   top: 0,
@@ -291,7 +301,9 @@ export default function WidgetChatPanel({
   };
 
   return (
-    <aside aria-label="Widget chat" style={PANEL}>
+    <>
+      <div data-chat-scrim style={SCRIM} aria-hidden />
+      <aside aria-label="Widget chat" style={PANEL}>
       <div style={HEADER}>
         <h2 style={{ margin: 0, fontSize: 18 }}>{title}</h2>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -400,5 +412,6 @@ export default function WidgetChatPanel({
         </div>
       </div>
     </aside>
+    </>
   );
 }
