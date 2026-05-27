@@ -15,6 +15,7 @@ interface Props {
   onEditChat: () => void;
   onTogglePinned: () => void;
   onCycleSize: () => void;
+  onCancel: () => void;
   onRetry: () => void;
 }
 
@@ -48,6 +49,24 @@ const BTN: React.CSSProperties = {
   border: '1px solid #30363d', borderRadius: 4,
   padding: '4px 8px', fontSize: 12, cursor: 'pointer'
 };
+
+function BuildingState({ onCancel }: { onCancel: () => void }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const start = Date.now();
+    const interval = window.setInterval(() => {
+      setElapsed(Math.floor((Date.now() - start) / 1000));
+    }, 500);
+    return () => window.clearInterval(interval);
+  }, []);
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center', justifyContent: 'center', color: '#8b949e' }}>
+      <span className="spinner" aria-hidden />
+      <div style={{ fontSize: 13 }}>building widget… {elapsed}s</div>
+      <button style={{ ...BTN, fontSize: 12 }} onClick={onCancel}>Cancel</button>
+    </div>
+  );
+}
 
 export default function Tile(props: Props) {
   const wvRef = useRef<HTMLElement>(null);
@@ -100,11 +119,7 @@ export default function Tile(props: Props) {
         </button>
       </div>
 
-      {props.state.kind === 'building' && (
-        <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: '#8b949e' }}>
-          building widget…
-        </div>
-      )}
+      {props.state.kind === 'building' && <BuildingState onCancel={props.onCancel} />}
 
       {props.state.kind === 'live' && (
         <webview

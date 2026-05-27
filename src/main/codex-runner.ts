@@ -13,6 +13,7 @@ export interface CodexRunOptions {
   cwd: string;
   timeoutMs?: number;
   logPath?: string;
+  signal?: AbortSignal;
   /** Injected for testing */
   spawnFn?: typeof nodeSpawn;
 }
@@ -21,7 +22,7 @@ export const DEFAULT_CODEX_TIMEOUT_MS = 600_000;
 const POLL_INTERVAL_MS = 500;
 
 export async function runCodex(opts: CodexRunOptions): Promise<CodexRunResult> {
-  const { prompt, cwd, timeoutMs = DEFAULT_CODEX_TIMEOUT_MS, logPath, spawnFn = nodeSpawn } = opts;
+  const { prompt, cwd, timeoutMs = DEFAULT_CODEX_TIMEOUT_MS, logPath, signal, spawnFn = nodeSpawn } = opts;
   const outputPath = path.join(cwd, 'index.html');
 
   return new Promise<CodexRunResult>((resolve) => {
@@ -49,6 +50,7 @@ export async function runCodex(opts: CodexRunOptions): Promise<CodexRunResult> {
       settled = true;
       clearTimeout(timer);
       clearInterval(poller);
+      if (onAbort) signal?.removeEventListener('abort', onAbort);
       if (logPath) {
         try { await fs.writeFile(logPath, stderrBuf); } catch { /* swallow */ }
       }
@@ -59,6 +61,18 @@ export async function runCodex(opts: CodexRunOptions): Promise<CodexRunResult> {
       }
       resolve(result);
     };
+
+    const onAbort = signal ? () => {
+      try { child.kill(); } catch { /* swallow */ }
+      finish({ ok: false, error: 'canceled' });
+    } : null;
+    if (signal) {
+      if (signal.aborted) {
+        onAbort?.();
+        return;
+      }
+      signal.addEventListener('abort', onAbort!);
+    }
 
     const timer = setTimeout(() => {
       try { child.kill(); } catch { /* swallow */ }

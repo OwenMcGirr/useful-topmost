@@ -40,6 +40,8 @@ const api = {
   listWidgetChat: (uuid: string) =>
     ipcRenderer.invoke('widget:chatList', uuid) as Promise<WidgetChatMessage[]>,
   deleteWidget: (uuid: string) => ipcRenderer.invoke('widget:delete', uuid) as Promise<{ ok: true }>,
+  cancelWidget: (uuid: string) =>
+    ipcRenderer.invoke('widget:cancel', uuid) as Promise<{ ok: true } | { ok: false; error: string }>,
   setWidgetPinned: (uuid: string, pinned: boolean) =>
     ipcRenderer.invoke('widget:setPinned', uuid, pinned) as Promise<{ ok: true }>,
   setWidgetSize: (uuid: string, size: WidgetSize) =>

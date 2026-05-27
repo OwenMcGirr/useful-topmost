@@ -17,10 +17,33 @@ describe('Tile', () => {
         onEditChat={() => {}}
         onTogglePinned={() => {}}
         onCycleSize={() => {}}
+        onCancel={() => {}}
         onRetry={() => {}}
       />
     );
     expect(screen.getByText(/building/i)).toBeInTheDocument();
+  });
+
+  it('building tile shows a Cancel button that calls onCancel', async () => {
+    const onCancel = vi.fn();
+    render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'building' }}
+        htmlUrl=""
+        widgetPreloadUrl=""
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={() => {}}
+        onCancel={onCancel}
+        onRetry={() => {}}
+      />
+    );
+    await userEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(onCancel).toHaveBeenCalled();
   });
 
   it('renders the webview when state is live', () => {
@@ -36,6 +59,7 @@ describe('Tile', () => {
         onEditChat={() => {}}
         onTogglePinned={() => {}}
         onCycleSize={() => {}}
+        onCancel={() => {}}
         onRetry={() => {}}
       />
     );
@@ -116,6 +140,7 @@ describe('Tile', () => {
         onEditChat={() => {}}
         onTogglePinned={() => {}}
         onCycleSize={() => {}}
+        onCancel={() => {}}
         onRetry={() => {}}
       />
     );
@@ -204,6 +229,7 @@ describe('Tile', () => {
         onEditChat={() => {}}
         onTogglePinned={() => {}}
         onCycleSize={() => {}}
+        onCancel={() => {}}
         onRetry={() => {}}
       />
     );
@@ -222,6 +248,7 @@ describe('Tile', () => {
         onEditChat={() => {}}
         onTogglePinned={() => {}}
         onCycleSize={() => {}}
+        onCancel={() => {}}
         onRetry={() => {}}
       />
     );
