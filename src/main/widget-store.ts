@@ -4,6 +4,10 @@ import { randomUUID } from 'node:crypto';
 
 export type WidgetSize = 'small' | 'wide' | 'large';
 
+export interface WidgetSummary {
+  sources: string[];
+}
+
 export interface WidgetMeta {
   prompt: string;
   created_at: string;
@@ -16,6 +20,11 @@ export interface WidgetMeta {
    * providers are allowed (pre-existing widgets default to this for BC).
    */
   selectedProviderIds?: string[];
+  /**
+   * Best-effort record of the data sources Codex used to build this widget.
+   * Surfaced in the geek-mode tile popover.
+   */
+  summary?: WidgetSummary;
 }
 
 export interface Widget {
@@ -25,6 +34,7 @@ export interface Widget {
   pinned?: boolean;
   size?: WidgetSize;
   selectedProviderIds?: string[];
+  summary?: WidgetSummary;
 }
 
 export type WidgetChatRole = 'user' | 'status';
@@ -52,6 +62,7 @@ export interface WidgetStore {
   setPinned(uuid: string, pinned: boolean): Promise<void>;
   setSize(uuid: string, size: WidgetSize): Promise<void>;
   setProviders(uuid: string, providerIds: string[] | undefined): Promise<void>;
+  setSummary(uuid: string, summary: WidgetSummary | undefined): Promise<void>;
   replaceWidgetHtml(uuid: string, html: string): Promise<void>;
   readWidgetHtml(uuid: string): Promise<string | null>;
   widgetsRoot(): string;
@@ -127,7 +138,8 @@ export function createWidgetStore(root: string): WidgetStore {
             created_at: meta.created_at,
             pinned: meta.pinned === true,
             size: meta.size,
-            selectedProviderIds: meta.selectedProviderIds
+            selectedProviderIds: meta.selectedProviderIds,
+            summary: meta.summary
           });
         } catch {
           // Skip a widget whose meta.json was deleted out-of-band.
@@ -184,6 +196,14 @@ export function createWidgetStore(root: string): WidgetStore {
       const next = { ...meta };
       if (providerIds === undefined) delete next.selectedProviderIds;
       else next.selectedProviderIds = providerIds;
+      await writeMeta(uuid, next);
+    },
+
+    async setSummary(uuid, summary) {
+      const meta = await readMeta(uuid);
+      const next = { ...meta };
+      if (summary === undefined) delete next.summary;
+      else next.summary = summary;
       await writeMeta(uuid, next);
     },
 

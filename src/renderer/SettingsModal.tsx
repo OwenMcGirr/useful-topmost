@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import type { UpdateState } from '../preload';
 import ApiProvidersSettings from './ApiProvidersSettings';
+import GeekModeSettings from './GeekModeSettings';
 import UpdateSettings from './UpdateSettings';
 import { BTN } from './settingsStyles';
 
-type Section = 'providers' | 'updates';
+type Section = 'providers' | 'geek' | 'updates';
 
 interface Props {
   open: boolean;
@@ -106,6 +107,13 @@ export default function SettingsModal({
               API Providers
             </button>
             <button
+              style={sidebarButton(section === 'geek')}
+              aria-current={section === 'geek' ? 'page' : undefined}
+              onClick={() => setSection('geek')}
+            >
+              Geek Mode
+            </button>
+            <button
               style={sidebarButton(section === 'updates')}
               aria-current={section === 'updates' ? 'page' : undefined}
               onClick={() => setSection('updates')}
@@ -114,9 +122,9 @@ export default function SettingsModal({
             </button>
           </nav>
           <div style={CONTENT}>
-            {section === 'providers' ? (
-              <ApiProvidersSettings />
-            ) : (
+            {section === 'providers' && <ApiProvidersSettings />}
+            {section === 'geek' && <GeekModeSettings />}
+            {section === 'updates' && (
               <UpdateSettings
                 updateState={updateState}
                 onCheckUpdates={onCheckUpdates}

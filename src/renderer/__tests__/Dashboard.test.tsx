@@ -93,6 +93,10 @@ function mockApi(opts: { onboardingDismissed?: boolean } = {}) {
       get: vi.fn(async () => ({ dismissed: opts.onboardingDismissed ?? false })),
       dismiss: vi.fn(async () => ({ ok: true }))
     },
+    prefs: {
+      get: vi.fn(async () => ({ geekMode: false })),
+      setGeekMode: vi.fn(async () => ({ ok: true }))
+    },
     updates: {
       getState: vi.fn(async () => ({ status: 'idle' })),
       checkNow: vi.fn(async () => ({ status: 'not-available' })),

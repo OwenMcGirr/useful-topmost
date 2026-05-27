@@ -34,7 +34,16 @@ Before implementation:
 - If validation shows the original approach will fail, choose a simpler working approach and make the widget degrade gracefully.
 - Do not include your validation notes in the widget UI. Still write exactly one final index.html file.
 
+Sources record:
+- After writing index.html, also write summary.json to the same directory containing exactly { "sources": [string, ...] }.
+- Each entry is the short human-readable name of a data source the widget actually uses — e.g. "Open-Meteo", "Hacker News API", "Wikipedia REST", "GitHub REST API".
+- Do NOT put URLs in sources. Use the API or service name a user would recognize.
+- For a self-contained widget that fetches nothing (clock, countdown, static text), write { "sources": [] }.
+- summary.json is plain JSON only — no Markdown fences, no surrounding prose.
+
 `;
+
+export const WIDGET_SUMMARY_OUTPUT_FILE = 'summary.json';
 
 export interface PublicProviderForPrompt {
   name: string;

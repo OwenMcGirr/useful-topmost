@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { createWidgetStore } from './widget-store';
 import { createSecretsStore } from './secrets-store';
 import { createOnboardingStore } from './onboarding-store';
+import { createPrefsStore } from './prefs-store';
 import { runCodex } from './codex-runner';
 import { registerIpc } from './ipc';
 import { createUpdateController } from './updater';
@@ -67,7 +68,8 @@ app.whenReady().then(async () => {
   const store = createWidgetStore(userData);
   const secrets = createSecretsStore(userData);
   const onboarding = createOnboardingStore(userData);
-  registerIpc(ipcMain, store, secrets, onboarding, runCodex, () => mainWindow!.webContents);
+  const prefs = createPrefsStore(userData);
+  registerIpc(ipcMain, store, secrets, onboarding, runCodex, () => mainWindow!.webContents, prefs);
 
   ipcMain.handle('app:codexStatus', () => checkCodexStatus());
   ipcMain.handle('app:codexAvailable', async () => {

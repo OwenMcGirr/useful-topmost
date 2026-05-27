@@ -23,6 +23,13 @@ describe('codex-prompt', () => {
     expect(CODEX_SYSTEM_PROMPT).toContain('Do not include your validation notes in the widget UI');
   });
 
+  it('instructs Codex to write a summary.json sources sidecar', () => {
+    expect(CODEX_SYSTEM_PROMPT).toContain('Sources record:');
+    expect(CODEX_SYSTEM_PROMPT).toContain('summary.json');
+    expect(CODEX_SYSTEM_PROMPT).toContain('"sources"');
+    expect(CODEX_SYSTEM_PROMPT).toContain('Do NOT put URLs in sources');
+  });
+
   it('buildPrompt appends the user prompt after the system prompt', () => {
     const out = buildPrompt('show the weather');
     expect(out.startsWith(CODEX_SYSTEM_PROMPT)).toBe(true);

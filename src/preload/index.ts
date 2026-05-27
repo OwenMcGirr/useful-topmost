@@ -3,7 +3,7 @@ import type { IpcRendererEvent } from 'electron';
 import type { PublicProvider, Provider } from '../main/secrets-store';
 import type { OnboardingState } from '../main/onboarding-store';
 import type { UpdateState } from '../main/updater';
-import type { WidgetSize } from '../main/widget-store';
+import type { WidgetSize, WidgetSummary } from '../main/widget-store';
 
 export interface CodexStatus {
   installed: boolean;
@@ -17,6 +17,7 @@ export interface Widget {
   pinned?: boolean;
   size?: WidgetSize;
   selectedProviderIds?: string[];
+  summary?: WidgetSummary;
 }
 
 export type WidgetChatRole = 'user' | 'status';
@@ -95,6 +96,11 @@ const api = {
   onboarding: {
     get: () => ipcRenderer.invoke('onboarding:get') as Promise<OnboardingState>,
     dismiss: () => ipcRenderer.invoke('onboarding:dismiss') as Promise<{ ok: true }>
+  },
+  prefs: {
+    get: () => ipcRenderer.invoke('prefs:get') as Promise<{ geekMode: boolean }>,
+    setGeekMode: (value: boolean) =>
+      ipcRenderer.invoke('prefs:setGeekMode', value) as Promise<{ ok: true } | { ok: false; error: string }>
   },
   updates: {
     getState: () => ipcRenderer.invoke('update:getState') as Promise<UpdateState>,
