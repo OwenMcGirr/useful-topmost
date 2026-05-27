@@ -30,6 +30,14 @@ describe('codex-prompt', () => {
     expect(CODEX_SYSTEM_PROMPT).toContain('Do NOT put URLs in sources');
   });
 
+  it('instructs Codex to use window.cache.get for cadenced fetches', () => {
+    expect(CODEX_SYSTEM_PROMPT).toContain('window.cache.get(key, ttlMs, fetcher)');
+    expect(CODEX_SYSTEM_PROMPT).toContain('persists this cache per-widget on disk');
+    expect(CODEX_SYSTEM_PROMPT).toContain('bump the key');
+    // The old "bake it into a setInterval" line is gone (cache replaces it).
+    expect(CODEX_SYSTEM_PROMPT).not.toContain('bake it into a setInterval');
+  });
+
   it('buildPrompt appends the user prompt after the system prompt', () => {
     const out = buildPrompt('show the weather');
     expect(out.startsWith(CODEX_SYSTEM_PROMPT)).toBe(true);
