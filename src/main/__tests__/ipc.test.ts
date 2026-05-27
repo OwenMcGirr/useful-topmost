@@ -255,6 +255,72 @@ describe('ipc', () => {
     }
   });
 
+  it('app:cache:set persists; app:cache:get returns the value before TTL; null after', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const uuid = await store.create('p');
+    await fs.writeFile(path.join(store.dir(uuid), 'index.html'), '<html></html>');
+    const senderUrl = pathToFileURL(path.join(store.dir(uuid), 'index.html')).href;
+    const event = { senderFrame: { url: senderUrl } } as any;
+
+    const setResult = await ipc.invokeWithEvent('app:cache:set', event, 'weather', { temp: 17 }, 60_000);
+    expect(setResult).toEqual({ ok: true });
+
+    const got = await ipc.invokeWithEvent('app:cache:get', event, 'weather');
+    expect(got).not.toBeNull();
+    expect(got.value).toEqual({ temp: 17 });
+
+    // Overwrite with already-expired entry, then read.
+    await fs.writeFile(path.join(store.dir(uuid), 'cache.json'), JSON.stringify({
+      weather: { value: { temp: 17 }, expiresAt: Date.now() - 1000 }
+    }));
+    const expired = await ipc.invokeWithEvent('app:cache:get', event, 'weather');
+    expect(expired).toBeNull();
+  });
+
+  it('app:cache:get returns null for non-widget senders; app:cache:set rejects them', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const nonWidgetEvent = { senderFrame: { url: 'http://localhost/' } } as any;
+
+    expect(await ipc.invokeWithEvent('app:cache:get', nonWidgetEvent, 'k')).toBeNull();
+
+    const setResult = await ipc.invokeWithEvent('app:cache:set', nonWidgetEvent, 'k', 1, 60_000);
+    expect(setResult.ok).toBe(false);
+  });
+
+  it('app:cache:get returns null for unknown keys from a widget sender', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const uuid = await store.create('p');
+    await fs.writeFile(path.join(store.dir(uuid), 'index.html'), '<html></html>');
+    const senderUrl = pathToFileURL(path.join(store.dir(uuid), 'index.html')).href;
+    const event = { senderFrame: { url: senderUrl } } as any;
+
+    expect(await ipc.invokeWithEvent('app:cache:get', event, 'missing')).toBeNull();
+  });
+
   it('widget:cancel aborts an in-flight codex run for the widget', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);

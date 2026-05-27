@@ -10,6 +10,7 @@ import type { runCodex as RunCodexFn } from './codex-runner';
 import { PROVIDER_LOOKUP_OUTPUT_FILE, WIDGET_SUMMARY_OUTPUT_FILE, buildChatPrompt, buildPrompt, buildProviderLookupPrompt } from './codex-prompt';
 import { appFetch, filterProviders, injectAuth } from './proxy';
 import { runLocalExec, widgetCwdFromSenderUrl } from './local-exec';
+import { getCacheEntry, writeCacheEntry } from './widget-cache-store';
 
 export type GetSender = () => Pick<WebContents, 'send'>;
 
@@ -509,6 +510,28 @@ export function registerIpc(
     }
 
     return runLocalExec({ command, args }, { cwd });
+  });
+
+  ipcMain.handle('app:cache:get', async (event, key: unknown) => {
+    const cwd = widgetCwdFromSenderUrl(event.senderFrame?.url ?? '', widgets.widgetsRoot());
+    if (!cwd) return null;
+    if (typeof key !== 'string' || !key) return null;
+    return getCacheEntry(cwd, key);
+  });
+
+  ipcMain.handle('app:cache:set', async (event, key: unknown, value: unknown, ttlMs: unknown) => {
+    const cwd = widgetCwdFromSenderUrl(event.senderFrame?.url ?? '', widgets.widgetsRoot());
+    if (!cwd) return { ok: false as const, error: 'cache is only available to widget files' };
+    if (typeof key !== 'string' || !key) return { ok: false as const, error: 'key must be a non-empty string' };
+    if (typeof ttlMs !== 'number' || !Number.isFinite(ttlMs)) {
+      return { ok: false as const, error: 'ttlMs must be a finite number' };
+    }
+    try {
+      await writeCacheEntry(cwd, key, value, ttlMs);
+      return { ok: true as const };
+    } catch (e: any) {
+      return { ok: false as const, error: e?.message ?? 'cache write failed' };
+    }
   });
 
   ipcMain.handle('app:widgetPreloadUrl', async () => {

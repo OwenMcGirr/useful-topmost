@@ -15,7 +15,14 @@ Visual style:
 
 Data:
 - Prefer keyless public APIs (Open-Meteo for weather, Wikipedia, public RSS, public GitHub endpoints, etc.).
-- Pick a sensible refresh cadence and bake it into a setInterval.
+- For any data with a natural refresh cadence (every 10 minutes, hourly, daily), wrap the fetch in window.cache.get(key, ttlMs, fetcher):
+    const data = await window.cache.get("weather", 60 * 60 * 1000, async () => {
+      const r = await window.appFetch("https://api.open-meteo.com/...");
+      return await r.json();
+    });
+  The app persists this cache per-widget on disk, so when the dashboard shuffles a tile out and back in (or the app restarts) the cached value is returned without re-fetching until the TTL expires.
+- Use a stable string key per data source ("weather", "top-stories"). If you change the SHAPE of the cached value in a chat edit, bump the key (e.g. "weather-v2") to avoid stale-shape reads.
+- Use setInterval only for purely visual ticking (countdown clock, blinking cursor) that does not perform a fetch.
 
 Local commands:
 - For explicit local CLI tasks, use window.local.exec(command, args). Pass the executable name as command and each argument as a separate string in args; do not build shell command strings.

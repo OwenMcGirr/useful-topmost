@@ -125,3 +125,22 @@ contextBridge.exposeInMainWorld('local', {
   exec: (command: string, args: string[] = []): Promise<LocalExecResult> =>
     ipcRenderer.invoke('app:exec', command, args) as Promise<LocalExecResult>
 });
+
+interface CacheEntry { value: unknown; expiresAt: number }
+
+async function cacheGet<T>(key: string, ttlMs: number, fetcher: () => Promise<T>): Promise<T> {
+  if (typeof key === 'string' && key.length > 0 && ttlMs > 0) {
+    const cached = await ipcRenderer.invoke('app:cache:get', key) as CacheEntry | null;
+    if (cached) return cached.value as T;
+  }
+  const fresh = await fetcher();
+  if (typeof key === 'string' && key.length > 0 && ttlMs > 0) {
+    try { await ipcRenderer.invoke('app:cache:set', key, fresh, ttlMs); }
+    catch { /* fresh value still returned; swallow */ }
+  }
+  return fresh;
+}
+
+contextBridge.exposeInMainWorld('cache', {
+  get: cacheGet
+});
