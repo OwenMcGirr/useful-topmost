@@ -38,6 +38,13 @@ function updateStatusText(state: UpdateState): string {
 }
 
 export default function UpdateSettings({ updateState, onCheckUpdates, onRestartUpdate }: Props) {
+  const checkBusy =
+    updateState.status === 'checking' ||
+    updateState.status === 'downloading' ||
+    updateState.status === 'downloaded';
+  const checkStyle: React.CSSProperties = checkBusy
+    ? { ...BTN, opacity: 0.5, cursor: 'not-allowed' }
+    : BTN;
   return (
     <section>
       <h2 style={{ marginTop: 0, fontSize: 18 }}>Updates</h2>
@@ -47,7 +54,7 @@ export default function UpdateSettings({ updateState, onCheckUpdates, onRestartU
           <div style={{ fontSize: 12, opacity: 0.7 }}>{updateStatusText(updateState)}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button style={BTN} onClick={onCheckUpdates}>Check for updates</button>
+          <button style={checkStyle} disabled={checkBusy} onClick={onCheckUpdates}>Check for updates</button>
           {updateState.status === 'downloaded' && (
             <button style={PRIMARY_BTN} onClick={onRestartUpdate}>Restart to update</button>
           )}
