@@ -16,6 +16,7 @@ function mockApi(opts: { providers?: Array<{ id: string; name: string; hostnames
     htmlUrl: vi.fn(async (uuid: string) => `file:///${uuid}/index.html`),
     onWidgetReady: vi.fn((cb: any) => { readyHandler = cb; return () => {}; }),
     onWidgetError: vi.fn((cb: any) => { errorHandler = cb; return () => {}; }),
+    deleteWidget: vi.fn(async () => ({ ok: true })),
     setWidgetProviders: vi.fn(async () => ({ ok: true })),
     secrets: {
       list: vi.fn(async () => providers.map((p) => ({ ...p, auth: { type: 'header' as const, name: 'A' } })))
@@ -37,7 +38,7 @@ describe('WidgetChatPanel', () => {
     const { api } = mockApi();
     (window as any).api = api;
     const { container } = render(
-      <WidgetChatPanel open={false} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} />
+      <WidgetChatPanel open={false} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />
     );
     expect(container.textContent).toBe('');
   });
@@ -45,7 +46,7 @@ describe('WidgetChatPanel', () => {
   it('shows New widget in create mode with placeholder preview', () => {
     const { api } = mockApi();
     (window as any).api = api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} />);
+    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
 
     expect(screen.getByRole('heading', { name: /new widget/i })).toBeInTheDocument();
     expect(screen.getByText(/preview will appear here/i)).toBeInTheDocument();
@@ -74,7 +75,7 @@ describe('WidgetChatPanel', () => {
   it('empty message cannot send', async () => {
     const { api } = mockApi();
     (window as any).api = api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} />);
+    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
 
     expect(screen.getByRole('button', { name: /send/i })).toBeDisabled();
     expect(api.chatStartWidget).not.toHaveBeenCalled();
@@ -84,7 +85,7 @@ describe('WidgetChatPanel', () => {
     const { api } = mockApi();
     const onCreated = vi.fn();
     (window as any).api = api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={onCreated} onSent={() => {}} />);
+    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={onCreated} onSent={() => {}} onDeleted={() => {}} />);
 
     await userEvent.type(screen.getByLabelText(/widget message/i), 'show weather');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
@@ -107,6 +108,7 @@ describe('WidgetChatPanel', () => {
         onClose={() => {}}
         onCreated={() => {}}
         onSent={onSent}
+        onDeleted={() => {}}
       />
     );
 
@@ -120,7 +122,7 @@ describe('WidgetChatPanel', () => {
   it('Ctrl+Enter sends', async () => {
     const { api } = mockApi();
     (window as any).api = api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} />);
+    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
 
     await userEvent.type(screen.getByLabelText(/widget message/i), 'show time');
     await userEvent.keyboard('{Control>}{Enter}{/Control}');
@@ -163,7 +165,7 @@ describe('WidgetChatPanel', () => {
     ]});
     const onCreated = vi.fn();
     (window as any).api = m.api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={onCreated} onSent={() => {}} />);
+    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={onCreated} onSent={() => {}} onDeleted={() => {}} />);
 
     await screen.findByLabelText(/allow openweather/i);
     await userEvent.type(screen.getByLabelText(/widget message/i), 'show weather');
@@ -178,9 +180,56 @@ describe('WidgetChatPanel', () => {
   it('shows empty-state message when no providers are configured', async () => {
     const m = mockApi({ providers: [] });
     (window as any).api = m.api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} />);
+    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
 
     expect(await screen.findByText(/no providers configured/i)).toBeInTheDocument();
+  });
+
+  it('Delete widget button is hidden in create mode (no current uuid)', async () => {
+    const { api } = mockApi();
+    (window as any).api = api;
+    render(
+      <WidgetChatPanel
+        open={true}
+        mode="create"
+        widgetPreloadUrl=""
+        onClose={() => {}}
+        onCreated={() => {}}
+        onSent={() => {}}
+        onDeleted={() => {}}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: /delete widget/i })).toBeNull();
+  });
+
+  it('Delete widget button in edit mode requires a confirm click, then deletes', async () => {
+    const { api } = mockApi();
+    const onDeleted = vi.fn();
+    const onClose = vi.fn();
+    (window as any).api = api;
+    render(
+      <WidgetChatPanel
+        open={true}
+        mode="edit"
+        widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
+        widgetPreloadUrl=""
+        onClose={onClose}
+        onCreated={() => {}}
+        onSent={() => {}}
+        onDeleted={onDeleted}
+      />
+    );
+
+    const btn = await screen.findByRole('button', { name: /^delete widget$/i });
+    await userEvent.click(btn);
+    expect(api.deleteWidget).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /click to confirm/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /click to confirm/i }));
+    await waitFor(() => expect(api.deleteWidget).toHaveBeenCalledWith('u1'));
+    expect(onDeleted).toHaveBeenCalledWith('u1');
+    expect(onClose).toHaveBeenCalled();
   });
 
   it('refreshes preview after widget:ready', async () => {
