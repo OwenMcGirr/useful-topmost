@@ -72,6 +72,47 @@ describe('ipc', () => {
     expect(sender.sent).toContainEqual({ channel: 'widget:error', payload: { uuid, error: 'boom' } });
   });
 
+  it('widget:cancel aborts an in-flight codex run for the widget', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+
+    let capturedSignal: AbortSignal | undefined;
+    const runCodex = vi.fn(async ({ signal }: any) => {
+      capturedSignal = signal;
+      return new Promise<{ ok: boolean; error?: string }>((resolve) => {
+        signal?.addEventListener('abort', () => resolve({ ok: false, error: 'canceled' }));
+      });
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    const { uuid } = await ipc.invoke('widget:create', 'p');
+    await new Promise((r) => setTimeout(r, 10));
+
+    const cancelResult = await ipc.invoke('widget:cancel', uuid);
+    expect(cancelResult).toEqual({ ok: true });
+    expect(capturedSignal?.aborted).toBe(true);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(sender.sent).toContainEqual({ channel: 'widget:error', payload: { uuid, error: 'canceled' } });
+  });
+
+  it('widget:cancel returns ok:false when no run is in flight for that uuid', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    const result = await ipc.invoke('widget:cancel', 'nope');
+    expect(result.ok).toBe(false);
+  });
+
   it('widget:chatStart creates a widget, records chat, runs codex, and sends ready', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);

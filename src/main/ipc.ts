@@ -65,16 +65,31 @@ export function registerIpc(
   runCodex: typeof RunCodexFn,
   getSender: GetSender
 ): void {
+  const inflight = new Map<string, AbortController>();
+
+  const trackRun = (uuid: string): AbortController => {
+    const controller = new AbortController();
+    inflight.set(uuid, controller);
+    return controller;
+  };
+
+  const releaseRun = (uuid: string, controller: AbortController): void => {
+    if (inflight.get(uuid) === controller) inflight.delete(uuid);
+  };
+
   ipcMain.handle('widget:create', async (_event, prompt: string) => {
     const uuid = await widgets.create(prompt);
+    const controller = trackRun(uuid);
     void (async () => {
       const sender = getSender();
       const providers = await secrets.list();
       const result = await runCodex({
         prompt: buildPrompt(prompt, providers),
         cwd: widgets.dir(uuid),
-        logPath: widgets.logPath(uuid)
+        logPath: widgets.logPath(uuid),
+        signal: controller.signal
       });
+      releaseRun(uuid, controller);
       if (result.ok) {
         sender.send('widget:ready', { uuid });
       } else {
@@ -93,6 +108,7 @@ export function registerIpc(
     const status = chatMessage('status', 'Building...', 'building');
     await widgets.appendChatMessage(uuid, status);
 
+    const controller = trackRun(uuid);
     void (async () => {
       const sender = getSender();
       const providers = await secrets.list();
@@ -100,8 +116,10 @@ export function registerIpc(
       const result = await runCodex({
         prompt: buildChatPrompt({ messages: meta.chat ?? [], providers }),
         cwd: widgets.dir(uuid),
-        logPath: widgets.logPath(uuid)
+        logPath: widgets.logPath(uuid),
+        signal: controller.signal
       });
+      releaseRun(uuid, controller);
       if (result.ok) {
         await widgets.replaceChatMessage(uuid, status.id, {
           ...status,
@@ -139,6 +157,7 @@ export function registerIpc(
     const status = chatMessage('status', 'Building...', 'building');
     await widgets.appendChatMessage(uuid, status);
 
+    const controller = trackRun(uuid);
     void (async () => {
       const sender = getSender();
       const stagingDir = path.join(widgets.widgetsRoot(), '.staging', `${uuid}-${randomUUID()}`);
@@ -150,7 +169,8 @@ export function registerIpc(
         const result = await runCodex({
           prompt: buildChatPrompt({ messages: meta.chat ?? [], currentHtml, providers }),
           cwd: stagingDir,
-          logPath: path.join(stagingDir, 'codex.log')
+          logPath: path.join(stagingDir, 'codex.log'),
+          signal: controller.signal
         });
 
         if (result.ok) {
@@ -184,11 +204,19 @@ export function registerIpc(
         });
         sender.send('widget:error', { uuid, error });
       } finally {
+        releaseRun(uuid, controller);
         await fs.rm(stagingDir, { recursive: true, force: true });
       }
     })();
 
     return { ok: true };
+  });
+
+  ipcMain.handle('widget:cancel', async (_event, uuid: string) => {
+    const controller = inflight.get(uuid);
+    if (!controller) return { ok: false as const, error: 'no in-flight run for that widget' };
+    controller.abort();
+    return { ok: true as const };
   });
 
   ipcMain.handle('widget:chatList', async (_event, uuid: string) => {

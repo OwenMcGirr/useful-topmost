@@ -242,6 +242,12 @@ export default function Dashboard() {
     setTiles((prev) => prev.filter((t) => t.uuid !== uuid));
   }, []);
 
+  const handleCancel = useCallback(async (uuid: string) => {
+    await window.api.cancelWidget(uuid);
+    await window.api.deleteWidget(uuid);
+    setTiles((prev) => prev.filter((t) => t.uuid !== uuid));
+  }, []);
+
   const handleRetry = useCallback(async (uuid: string) => {
     const tile = tiles.find((t) => t.uuid === uuid);
     const meta = await window.api.getWidgetMeta(uuid);
@@ -388,6 +394,7 @@ export default function Dashboard() {
                 onEditChat={() => handleEditChat(t)}
                 onTogglePinned={() => handleTogglePinned(t.uuid)}
                 onCycleSize={() => handleCycleSize(t.uuid)}
+                onCancel={() => handleCancel(t.uuid)}
                 onRetry={() => handleRetry(t.uuid)}
               />
             </motion.div>
