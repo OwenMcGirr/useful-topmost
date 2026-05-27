@@ -13,7 +13,7 @@ function findProvider(providers: Provider[], host: string): Provider | undefined
   return providers.find((p) => p.hostnames.includes(host));
 }
 
-function injectAuth(provider: Provider, url: string, init: RequestInit): { url: string; init: RequestInit } {
+export function injectAuth(provider: Provider, url: string, init: RequestInit): { url: string; init: RequestInit } {
   if (provider.auth.type === 'query') {
     const u = new URL(url);
     u.searchParams.set(provider.auth.param, provider.value);

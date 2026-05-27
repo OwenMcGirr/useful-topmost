@@ -110,10 +110,29 @@ function applyPreset(draft: Draft, preset: Preset): Draft {
   };
 }
 
+type TestResult =
+  | { status: 'idle' }
+  | { status: 'running' }
+  | { status: 'done'; ok: true; httpStatus: number }
+  | { status: 'done'; ok: false; error: string };
+
+function describeTestResult(result: TestResult): { text: string; color: string } | null {
+  if (result.status === 'idle') return null;
+  if (result.status === 'running') return { text: 'testing…', color: '#8b949e' };
+  if (result.ok) {
+    if (result.httpStatus === 401 || result.httpStatus === 403) {
+      return { text: `HTTP ${result.httpStatus} — auth rejected`, color: '#f85149' };
+    }
+    return { text: `OK (HTTP ${result.httpStatus})`, color: '#3fb950' };
+  }
+  return { text: result.error, color: '#f85149' };
+}
+
 export default function ApiProvidersSettings() {
   const [providers, setProviders] = useState<PublicProvider[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string>('');
+  const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
 
   const refresh = async () => {
     setProviders(await window.api.secrets.list());
@@ -151,6 +170,17 @@ export default function ApiProvidersSettings() {
   const handleDelete = async (id: string) => {
     await window.api.secrets.delete(id);
     refresh();
+  };
+
+  const handleTest = async (id: string) => {
+    setTestResults((prev) => ({ ...prev, [id]: { status: 'running' } }));
+    const result = await window.api.secrets.test(id);
+    setTestResults((prev) => ({
+      ...prev,
+      [id]: result.ok
+        ? { status: 'done', ok: true, httpStatus: result.status }
+        : { status: 'done', ok: false, error: result.error }
+    }));
   };
 
   const handleSave = async () => {
@@ -288,18 +318,34 @@ export default function ApiProvidersSettings() {
             <div style={{ padding: '16px 0', opacity: 0.7 }}>No providers yet.</div>
           ) : (
             <div>
-              {providers.map((p) => (
-                <div key={p.id} data-row style={ROW}>
-                  <div>
-                    <div style={{ fontSize: 14 }}>{p.name}</div>
-                    <div style={{ fontSize: 12, opacity: 0.7 }}>{p.hostnames.join(', ')}</div>
+              {providers.map((p) => {
+                const result = testResults[p.id] ?? { status: 'idle' as const };
+                const description = describeTestResult(result);
+                return (
+                  <div key={p.id} data-row style={ROW}>
+                    <div>
+                      <div style={{ fontSize: 14 }}>{p.name}</div>
+                      <div style={{ fontSize: 12, opacity: 0.7 }}>{p.hostnames.join(', ')}</div>
+                      {description && (
+                        <div style={{ fontSize: 12, color: description.color, marginTop: 4 }}>
+                          {description.text}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button
+                        style={BTN}
+                        disabled={result.status === 'running'}
+                        onClick={() => handleTest(p.id)}
+                      >
+                        Test
+                      </button>
+                      <button style={BTN} onClick={() => startEdit(p)}>Edit</button>
+                      <button style={BTN_DANGER} onClick={() => handleDelete(p.id)}>Delete</button>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <button style={BTN} onClick={() => startEdit(p)}>Edit</button>
-                    <button style={BTN_DANGER} onClick={() => handleDelete(p.id)}>Delete</button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 

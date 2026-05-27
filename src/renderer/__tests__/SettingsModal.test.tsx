@@ -18,7 +18,8 @@ function mockApi(initial: any[] = []) {
         const idx = state.findIndex((x) => x.id === id);
         if (idx >= 0) state.splice(idx, 1);
         return { ok: true };
-      })
+      }),
+      test: vi.fn(async (_id: string) => ({ ok: true, status: 200 }) as any)
     }
   };
   return { api, state };
@@ -203,6 +204,37 @@ describe('SettingsModal', () => {
     expect((screen.getByLabelText(/hostnames/i) as HTMLTextAreaElement).value)
       .toBe('api.openweathermap.org\npro.openweathermap.org');
     expect((screen.getByLabelText(/^value$/i) as HTMLInputElement).value).toBe('');
+  });
+
+  it('Test on an entry calls api.secrets.test and shows the HTTP status', async () => {
+    const { api } = mockApi([{
+      id: 'p1', name: 'X', hostnames: ['x.com'],
+      auth: { type: 'query', param: 'k' }, value: 'V'
+    }]);
+    api.secrets.test = vi.fn(async (_id: string) => ({ ok: true, status: 200 })) as any;
+    (window as any).api = api;
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    const row = (await screen.findByText('X')).closest('[data-row]') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: /^test$/i }));
+
+    await waitFor(() => expect(api.secrets.test).toHaveBeenCalledWith('p1'));
+    expect(await within(row).findByText(/OK \(HTTP 200\)/i)).toBeInTheDocument();
+  });
+
+  it('Test on an entry reports 401 as auth rejected', async () => {
+    const { api } = mockApi([{
+      id: 'p1', name: 'X', hostnames: ['x.com'],
+      auth: { type: 'query', param: 'k' }, value: 'V'
+    }]);
+    api.secrets.test = vi.fn(async (_id: string) => ({ ok: true, status: 401 })) as any;
+    (window as any).api = api;
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    const row = (await screen.findByText('X')).closest('[data-row]') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: /^test$/i }));
+
+    expect(await within(row).findByText(/auth rejected/i)).toBeInTheDocument();
   });
 
   it('Delete on an entry calls api.secrets.delete and refreshes', async () => {
