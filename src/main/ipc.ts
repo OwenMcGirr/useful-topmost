@@ -355,6 +355,19 @@ export function registerIpc(
 
   let activeLookup: AbortController | null = null;
 
+  // Sweep stale .lookup/* scratch dirs left over when EBUSY (Windows keeps the
+  // codex child's cwd handle open for a moment after exit) prevented inline
+  // cleanup. Fire-and-forget at startup so it doesn't block IPC registration.
+  void (async () => {
+    const lookupRoot = path.join(widgets.widgetsRoot(), '.lookup');
+    try {
+      const entries = await fs.readdir(lookupRoot);
+      await Promise.all(entries.map((entry) =>
+        fs.rm(path.join(lookupRoot, entry), { recursive: true, force: true }).catch(() => undefined)
+      ));
+    } catch { /* lookupRoot doesn't exist yet */ }
+  })();
+
   ipcMain.handle('secrets:lookupProvider', async (_event, query: string): Promise<ProviderLookupResult> => {
     const trimmed = typeof query === 'string' ? query.trim() : '';
     if (!trimmed) return { ok: false, error: 'query is required' };
@@ -384,7 +397,10 @@ export function registerIpc(
       return { ok: false, error: e?.message ?? 'lookup failed' };
     } finally {
       if (activeLookup === controller) activeLookup = null;
-      await fs.rm(scratch, { recursive: true, force: true });
+      // Don't let cleanup failure overwrite the result. Codex holds the cwd
+      // handle for a beat after exit on Windows, so this can hit EBUSY; the
+      // startup sweep above picks up anything we leave behind.
+      await fs.rm(scratch, { recursive: true, force: true }).catch(() => undefined);
     }
   });
 
