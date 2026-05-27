@@ -20,7 +20,8 @@ function mockApi(initial: any[] = []) {
         return { ok: true };
       }),
       test: vi.fn(async (_id: string) => ({ ok: true, status: 200 }) as any),
-      lookupProvider: vi.fn(async (_query: string) => ({ ok: false, error: 'not mocked' }) as any)
+      lookupProvider: vi.fn(async (_query: string) => ({ ok: false, error: 'not mocked' }) as any),
+      cancelLookup: vi.fn(async () => ({ ok: true }) as any)
     }
   };
   return { api, state };

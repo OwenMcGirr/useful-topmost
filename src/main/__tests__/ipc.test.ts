@@ -417,8 +417,11 @@ describe('ipc', () => {
     const ipc = fakeIpcMain();
     const sender = fakeSender();
 
-    const runCodex = vi.fn(async ({ cwd, prompt, outputFile }: any) => {
+    const runCodex = vi.fn(async ({ cwd, prompt, outputFile, captureLastMessage, signal, logPath }: any) => {
       expect(outputFile).toBe('provider.json');
+      expect(captureLastMessage).toBe(true);
+      expect(typeof logPath).toBe('string');
+      expect(signal).toBeInstanceOf(AbortSignal);
       expect(prompt).toContain('browser_use');
       expect(prompt).toContain('Stripe');
       await fs.writeFile(path.join(cwd, outputFile), JSON.stringify({
@@ -463,6 +466,35 @@ describe('ipc', () => {
     const result = await ipc.invoke('secrets:lookupProvider', 'made-up API');
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/no official docs/);
+  });
+
+  it('secrets:cancelLookup aborts the in-flight lookup signal', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+
+    let capturedSignal: AbortSignal | undefined;
+    const runCodex = vi.fn(({ signal }: any) => {
+      capturedSignal = signal;
+      return new Promise((resolve) => {
+        signal?.addEventListener('abort', () => resolve({ ok: false, error: 'canceled' }));
+      });
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
+
+    const inflight = ipc.invoke('secrets:lookupProvider', 'Stripe');
+    await new Promise((r) => setTimeout(r, 10));
+
+    const cancelResult = await ipc.invoke('secrets:cancelLookup');
+    expect(cancelResult).toEqual({ ok: true });
+    expect(capturedSignal?.aborted).toBe(true);
+
+    const result = await inflight;
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/canceled/);
   });
 
   it('secrets:lookupProvider rejects an empty query without invoking codex', async () => {

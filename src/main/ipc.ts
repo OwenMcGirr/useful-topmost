@@ -353,9 +353,15 @@ export function registerIpc(
     return { ok: true };
   });
 
+  let activeLookup: AbortController | null = null;
+
   ipcMain.handle('secrets:lookupProvider', async (_event, query: string): Promise<ProviderLookupResult> => {
     const trimmed = typeof query === 'string' ? query.trim() : '';
     if (!trimmed) return { ok: false, error: 'query is required' };
+
+    if (activeLookup) activeLookup.abort();
+    const controller = new AbortController();
+    activeLookup = controller;
 
     const scratch = path.join(widgets.widgetsRoot(), '.lookup', randomUUID());
     await fs.mkdir(scratch, { recursive: true });
@@ -364,7 +370,10 @@ export function registerIpc(
         prompt: buildProviderLookupPrompt(trimmed),
         cwd: scratch,
         outputFile: PROVIDER_LOOKUP_OUTPUT_FILE,
-        timeoutMs: 120_000
+        captureLastMessage: true,
+        logPath: path.join(scratch, 'codex.log'),
+        timeoutMs: 120_000,
+        signal: controller.signal
       });
       if (!result.ok) {
         return { ok: false, error: result.error ?? 'codex run failed' };
@@ -374,8 +383,18 @@ export function registerIpc(
     } catch (e: any) {
       return { ok: false, error: e?.message ?? 'lookup failed' };
     } finally {
+      if (activeLookup === controller) activeLookup = null;
       await fs.rm(scratch, { recursive: true, force: true });
     }
+  });
+
+  ipcMain.handle('secrets:cancelLookup', async () => {
+    if (activeLookup) {
+      activeLookup.abort();
+      activeLookup = null;
+      return { ok: true as const };
+    }
+    return { ok: false as const, error: 'no active lookup' };
   });
 
   ipcMain.handle('secrets:test', async (_event, id: string) => {

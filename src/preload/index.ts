@@ -84,7 +84,9 @@ const api = {
     test: (id: string) =>
       ipcRenderer.invoke('secrets:test', id) as Promise<{ ok: true; status: number } | { ok: false; error: string }>,
     lookupProvider: (query: string) =>
-      ipcRenderer.invoke('secrets:lookupProvider', query) as Promise<LookupProviderResult>
+      ipcRenderer.invoke('secrets:lookupProvider', query) as Promise<LookupProviderResult>,
+    cancelLookup: () =>
+      ipcRenderer.invoke('secrets:cancelLookup') as Promise<{ ok: true } | { ok: false; error: string }>
   },
   onboarding: {
     get: () => ipcRenderer.invoke('onboarding:get') as Promise<OnboardingState>,
