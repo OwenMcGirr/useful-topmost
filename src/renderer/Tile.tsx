@@ -31,8 +31,7 @@ const PIN_BADGE: React.CSSProperties = {
 const CHROME: React.CSSProperties = {
   position: 'absolute', top: 0, left: 0, right: 0,
   padding: '4px 8px', display: 'flex', gap: 4, justifyContent: 'flex-end',
-  background: 'rgba(13,17,23,0.85)', opacity: 0,
-  transition: 'opacity 120ms ease-in', zIndex: 10
+  background: 'rgba(13,17,23,0.85)', zIndex: 10
 };
 
 const BTN: React.CSSProperties = {
@@ -66,19 +65,9 @@ export default function Tile(props: Props) {
   };
 
   return (
-    <div
-      style={TILE}
-      onMouseEnter={(e) => {
-        const chrome = e.currentTarget.querySelector<HTMLDivElement>('[data-chrome]');
-        if (chrome) chrome.style.opacity = '1';
-      }}
-      onMouseLeave={(e) => {
-        const chrome = e.currentTarget.querySelector<HTMLDivElement>('[data-chrome]');
-        if (chrome) chrome.style.opacity = '0';
-      }}
-    >
+    <div className="tile" style={TILE}>
       {props.pinned === true && <div data-pin-indicator aria-label="pinned" style={PIN_BADGE} />}
-      <div data-chrome style={CHROME}>
+      <div className="tile-chrome" data-chrome style={CHROME}>
         <button style={BTN} onClick={props.onTogglePinned}>
           {props.pinned === true ? 'unpin' : 'pin'}
         </button>

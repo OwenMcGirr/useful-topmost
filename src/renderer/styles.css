@@ -25,3 +25,13 @@ select:focus-visible,
   animation: spin 0.8s linear infinite;
   display: inline-block;
 }
+
+.tile-chrome {
+  opacity: 0;
+  transition: opacity 120ms ease-in;
+}
+
+.tile:hover .tile-chrome,
+.tile:focus-within .tile-chrome {
+  opacity: 1;
+}
