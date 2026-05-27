@@ -31,6 +31,22 @@ describe('WelcomeOverlay', () => {
     expect(onUseExample).not.toHaveBeenCalled();
   });
 
+  it('clicking the backdrop calls onDismiss', async () => {
+    const onDismiss = vi.fn();
+    render(<WelcomeOverlay onDismiss={onDismiss} onUseExample={() => {}} />);
+
+    await userEvent.click(screen.getByRole('dialog'));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('clicking inside the panel does not dismiss', async () => {
+    const onDismiss = vi.fn();
+    render(<WelcomeOverlay onDismiss={onDismiss} onUseExample={() => {}} />);
+
+    await userEvent.click(screen.getByText(/welcome to useful-topmost/i));
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
   it('clicking a chip does not also dismiss', async () => {
     const onDismiss = vi.fn();
     const onUseExample = vi.fn();

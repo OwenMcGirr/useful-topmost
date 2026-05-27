@@ -15,12 +15,11 @@ const OVERLAY: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  pointerEvents: 'none',
-  zIndex: 40
+  background: 'rgba(0, 0, 0, 0.45)',
+  zIndex: 60
 };
 
 const PANEL: React.CSSProperties = {
-  pointerEvents: 'auto',
   width: 'min(640px, 88vw)',
   background: '#161b22',
   border: '1px solid #30363d',
@@ -85,7 +84,14 @@ const DISMISS: React.CSSProperties = {
 
 export default function WelcomeOverlay({ onDismiss, onUseExample }: Props) {
   return (
-    <div style={OVERLAY} role="dialog" aria-label="welcome">
+    <div
+      style={OVERLAY}
+      role="dialog"
+      aria-label="welcome"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onDismiss();
+      }}
+    >
       <div style={PANEL}>
         <h1 style={HEADLINE}>Welcome to useful-topmost</h1>
         <p style={INTRO}>
