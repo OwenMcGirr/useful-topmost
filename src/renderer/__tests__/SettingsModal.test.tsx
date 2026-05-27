@@ -189,33 +189,6 @@ describe('SettingsModal', () => {
     expect(screen.queryByLabelText(/describe an api/i)).toBeNull();
   });
 
-  it('picking a preset fills name, hostnames and auth fields', async () => {
-    const { api } = mockApi([]);
-    (window as any).api = api;
-    render(<SettingsModal open={true} onClose={() => {}} />);
-
-    await userEvent.click(await screen.findByRole('button', { name: /add provider/i }));
-
-    await userEvent.selectOptions(screen.getByLabelText(/start from preset/i), 'openweather');
-
-    expect((screen.getByLabelText(/^name$/i) as HTMLInputElement).value).toBe('OpenWeather');
-    expect((screen.getByLabelText(/hostnames/i) as HTMLTextAreaElement).value).toContain('api.openweathermap.org');
-    expect((screen.getByLabelText(/param/i) as HTMLInputElement).value).toBe('appid');
-  });
-
-  it('preset picker is hidden when editing an existing provider', async () => {
-    const { api } = mockApi([{
-      id: 'p1', name: 'X', hostnames: ['x.com'],
-      auth: { type: 'query', param: 'k' }, value: 'V'
-    }]);
-    (window as any).api = api;
-    render(<SettingsModal open={true} onClose={() => {}} />);
-
-    await userEvent.click(await screen.findByRole('button', { name: /edit/i }));
-
-    expect(screen.queryByLabelText(/start from preset/i)).toBeNull();
-  });
-
   it('editing a header provider with "Bearer " prefix selects the Bearer scheme', async () => {
     const { api } = mockApi([{
       id: 'p1', name: 'Auth Provider',

@@ -48,68 +48,6 @@ function prefixToScheme(prefix: string | undefined): { scheme: HeaderScheme; cus
   return { scheme: 'custom', custom: prefix };
 }
 
-interface Preset {
-  id: string;
-  label: string;
-  name: string;
-  hostnames: string[];
-  authType: 'query' | 'header';
-  param?: string;
-  headerName?: string;
-  headerScheme?: HeaderScheme;
-}
-
-const PRESETS: Preset[] = [
-  {
-    id: 'openweather', label: 'OpenWeather',
-    name: 'OpenWeather', hostnames: ['api.openweathermap.org', 'pro.openweathermap.org'],
-    authType: 'query', param: 'appid'
-  },
-  {
-    id: 'nasa', label: 'NASA',
-    name: 'NASA', hostnames: ['api.nasa.gov'],
-    authType: 'query', param: 'api_key'
-  },
-  {
-    id: 'alphavantage', label: 'AlphaVantage',
-    name: 'AlphaVantage', hostnames: ['www.alphavantage.co'],
-    authType: 'query', param: 'apikey'
-  },
-  {
-    id: 'mapbox', label: 'Mapbox',
-    name: 'Mapbox', hostnames: ['api.mapbox.com'],
-    authType: 'query', param: 'access_token'
-  },
-  {
-    id: 'openai', label: 'OpenAI',
-    name: 'OpenAI', hostnames: ['api.openai.com'],
-    authType: 'header', headerName: 'Authorization', headerScheme: 'bearer'
-  },
-  {
-    id: 'anthropic', label: 'Anthropic',
-    name: 'Anthropic', hostnames: ['api.anthropic.com'],
-    authType: 'header', headerName: 'x-api-key', headerScheme: 'none'
-  },
-  {
-    id: 'newsapi', label: 'News API',
-    name: 'News API', hostnames: ['newsapi.org'],
-    authType: 'header', headerName: 'X-API-Key', headerScheme: 'none'
-  }
-];
-
-function applyPreset(draft: Draft, preset: Preset): Draft {
-  return {
-    ...draft,
-    name: preset.name,
-    hostnamesText: preset.hostnames.join('\n'),
-    authType: preset.authType,
-    param: preset.param ?? '',
-    headerName: preset.headerName ?? '',
-    headerScheme: preset.headerScheme ?? 'none',
-    headerCustomPrefix: ''
-  };
-}
-
 type TestResult =
   | { status: 'idle' }
   | { status: 'running' }
@@ -339,24 +277,6 @@ export default function ApiProvidersSettings() {
                 </div>
               )}
             </div>
-          )}
-          {!draft.editing && (
-            <label style={FIELD}>
-              <span style={{ display: 'block', fontSize: 12, opacity: 0.7, marginBottom: 4 }}>Start from preset (optional)</span>
-              <select
-                style={INPUT}
-                value=""
-                onChange={(e) => {
-                  const preset = PRESETS.find((p) => p.id === e.target.value);
-                  if (preset) setDraft(applyPreset(draft, preset));
-                }}
-              >
-                <option value="">— choose a preset —</option>
-                {PRESETS.map((p) => (
-                  <option key={p.id} value={p.id}>{p.label}</option>
-                ))}
-              </select>
-            </label>
           )}
           <label style={FIELD}>
             <span style={{ display: 'block', fontSize: 12, opacity: 0.7, marginBottom: 4 }}>Name</span>
