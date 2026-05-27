@@ -26,6 +26,13 @@ function fakeSender() {
   };
 }
 
+async function waitForSent(sender: ReturnType<typeof fakeSender>, expected: any) {
+  for (let i = 0; i < 20; i += 1) {
+    if (sender.sent.some((message) => JSON.stringify(message) === JSON.stringify(expected))) return;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
 describe('ipc', () => {
   it('widget:create creates a widget, runs codex, and sends widget:ready on success', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
@@ -125,7 +132,7 @@ describe('ipc', () => {
     registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
 
     expect(await ipc.invoke('widget:chatSend', uuid, 'make it blue')).toEqual({ ok: true });
-    await new Promise((r) => setTimeout(r, 10));
+    await waitForSent(sender, { channel: 'widget:ready', payload: { uuid } });
 
     expect(await store.readWidgetHtml(uuid)).toBe('<html>new</html>');
     expect((await store.getMeta(uuid)).prompt).toBe('make it blue');
@@ -145,7 +152,7 @@ describe('ipc', () => {
     registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any);
 
     expect(await ipc.invoke('widget:chatSend', uuid, 'break it')).toEqual({ ok: true });
-    await new Promise((r) => setTimeout(r, 10));
+    await waitForSent(sender, { channel: 'widget:error', payload: { uuid, error: 'nope' } });
 
     expect(await store.readWidgetHtml(uuid)).toBe('<html>old</html>');
     const chat = await ipc.invoke('widget:chatList', uuid);

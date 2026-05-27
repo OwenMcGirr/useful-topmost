@@ -29,6 +29,11 @@ Looking things up:
 - For any request the widget will make, confirm the URL, method, required headers, and the response shape against the upstream's documentation. A widget that hits the wrong endpoint or reads the wrong field is worse than one that fails fast.
 - Inside the widget, use plain object headers like { "Accept": "application/json" }. Do not use \`new Headers()\` — Headers instances do not survive the contextIsolation boundary in this app, so any custom headers in one are silently lost.
 
+Before implementation:
+- Test or validate the intended data source, selector, CLI command, calculation, or browser API assumption before writing the final widget.
+- If validation shows the original approach will fail, choose a simpler working approach and make the widget degrade gracefully.
+- Do not include your validation notes in the widget UI. Still write exactly one final index.html file.
+
 `;
 
 export interface PublicProviderForPrompt {
