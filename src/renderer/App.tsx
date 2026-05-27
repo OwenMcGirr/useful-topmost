@@ -10,7 +10,12 @@ export default function App() {
     window.api.codexStatus().then(setStatus);
   }, []);
 
-  if (status === null) return <div style={{ padding: 24 }}>Checking Codex…</div>;
+  if (status === null) return (
+    <div role="status" style={{ padding: 24, display: 'flex', gap: 12, alignItems: 'center' }}>
+      <span className="spinner" aria-hidden />
+      <span>Checking Codex…</span>
+    </div>
+  );
   if (!status.installed) return <SetupScreen mode="install" />;
   if (!status.authenticated) return <SetupScreen mode="login" />;
   return <Dashboard />;
