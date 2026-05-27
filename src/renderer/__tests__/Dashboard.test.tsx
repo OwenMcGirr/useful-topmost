@@ -283,7 +283,7 @@ describe('Dashboard', () => {
     const { container } = render(<Dashboard />);
     await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(1));
 
-    await userEvent.click(screen.getByRole('button', { name: /edit with chat/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'edit with chat' }));
     expect(await screen.findByRole('heading', { name: /edit widget/i })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/widget message/i), 'make it blue');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));

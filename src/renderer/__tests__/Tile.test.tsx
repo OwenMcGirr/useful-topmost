@@ -81,7 +81,7 @@ describe('Tile', () => {
       />
     );
     await userEvent.click(screen.getByRole('button', { name: /refresh/i }));
-    await userEvent.click(screen.getByRole('button', { name: /edit with chat/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'edit with chat' }));
     await userEvent.click(screen.getByRole('button', { name: /dismiss/i }));
     expect(onRefresh).toHaveBeenCalled();
     expect(onEditChat).toHaveBeenCalled();
