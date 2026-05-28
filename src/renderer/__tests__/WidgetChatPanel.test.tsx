@@ -18,6 +18,7 @@ function mockApi(opts: { providers?: Array<{ id: string; name: string; hostnames
     onWidgetError: vi.fn((cb: any) => { errorHandler = cb; return () => {}; }),
     deleteWidget: vi.fn(async () => ({ ok: true })),
     setWidgetProviders: vi.fn(async () => ({ ok: true })),
+    setWidgetRefreshTtl: vi.fn(async () => ({ ok: true })),
     secrets: {
       list: vi.fn(async () => providers.map((p) => ({ ...p, auth: { type: 'header' as const, name: 'A' } })))
     }
@@ -90,8 +91,8 @@ describe('WidgetChatPanel', () => {
     await userEvent.type(screen.getByLabelText(/widget message/i), 'show weather');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
 
-    await waitFor(() => expect(api.chatStartWidget).toHaveBeenCalledWith('show weather', []));
-    expect(onCreated).toHaveBeenCalledWith('new-widget', 'show weather', []);
+    await waitFor(() => expect(api.chatStartWidget).toHaveBeenCalledWith('show weather', [], 3_600_000));
+    expect(onCreated).toHaveBeenCalledWith('new-widget', 'show weather', [], 3_600_000);
     expect(screen.getByText(/building preview/i)).toBeInTheDocument();
   });
 
@@ -127,7 +128,7 @@ describe('WidgetChatPanel', () => {
     await userEvent.type(screen.getByLabelText(/widget message/i), 'show time');
     await userEvent.keyboard('{Control>}{Enter}{/Control}');
 
-    await waitFor(() => expect(api.chatStartWidget).toHaveBeenCalledWith('show time', []));
+    await waitFor(() => expect(api.chatStartWidget).toHaveBeenCalledWith('show time', [], 3_600_000));
   });
 
   it('provider section renders checkboxes and toggling persists via setWidgetProviders', async () => {
@@ -156,6 +157,60 @@ describe('WidgetChatPanel', () => {
     await userEvent.click(nasa);
 
     await waitFor(() => expect(m.api.setWidgetProviders).toHaveBeenCalledWith('u1', ['p1']));
+  });
+
+  it('refresh dropdown shows the seven presets and defaults to 1 hour in create mode', async () => {
+    const { api } = mockApi();
+    (window as any).api = api;
+    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+
+    const select = await screen.findByLabelText(/refresh cadence/i) as HTMLSelectElement;
+    const labels = Array.from(select.options).map((o) => o.textContent);
+    expect(labels).toEqual(['Live', '1 min', '5 min', '15 min', '1 hour', '6 hours', 'Daily']);
+    expect(select.value).toBe('3600000');
+  });
+
+  it('edit mode seeds refresh dropdown from widget.refreshTtlMs and toggling calls setWidgetRefreshTtl', async () => {
+    const { api } = mockApi();
+    (window as any).api = api;
+    render(
+      <WidgetChatPanel
+        open={true}
+        mode="edit"
+        widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html', refreshTtlMs: 86_400_000 }}
+        widgetPreloadUrl=""
+        onClose={() => {}}
+        onCreated={() => {}}
+        onSent={() => {}}
+        onDeleted={() => {}}
+      />
+    );
+
+    const select = await screen.findByLabelText(/refresh cadence/i) as HTMLSelectElement;
+    expect(select.value).toBe('86400000');
+
+    await userEvent.selectOptions(select, '300000');
+
+    await waitFor(() => expect(api.setWidgetRefreshTtl).toHaveBeenCalledWith('u1', 300_000));
+  });
+
+  it('create call includes the selected refresh ttl as the third argument', async () => {
+    const m = mockApi();
+    const onCreated = vi.fn();
+    (window as any).api = m.api;
+    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={onCreated} onSent={() => {}} onDeleted={() => {}} />);
+
+    const select = await screen.findByLabelText(/refresh cadence/i) as HTMLSelectElement;
+    await userEvent.selectOptions(select, '86400000');
+
+    await userEvent.type(screen.getByLabelText(/widget message/i), 'show weather');
+    await userEvent.click(screen.getByRole('button', { name: /send/i }));
+
+    await waitFor(() => expect(m.api.chatStartWidget).toHaveBeenCalled());
+    const args = m.api.chatStartWidget.mock.calls[0];
+    expect(args[0]).toBe('show weather');
+    expect(args[2]).toBe(86_400_000);
+    expect(onCreated).toHaveBeenCalledWith('new-widget', 'show weather', expect.any(Array), 86_400_000);
   });
 
   it('create mode defaults to all providers selected and sends them with the create call', async () => {

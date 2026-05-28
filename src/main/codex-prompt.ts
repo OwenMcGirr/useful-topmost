@@ -79,10 +79,44 @@ export interface BuildChatPromptOptions {
   messages: WidgetChatMessage[];
   currentHtml?: string | null;
   providers?: PublicProviderForPrompt[];
+  refreshTtlMs?: number;
 }
 
-export function buildPrompt(userPrompt: string, providers: PublicProviderForPrompt[] = []): string {
-  return CODEX_SYSTEM_PROMPT + providersBlock(providers) + "The user's request:\n" + userPrompt;
+export interface RefreshPreset {
+  label: string;
+  ttlMs: number;
+}
+
+export const REFRESH_PRESETS: readonly RefreshPreset[] = [
+  { label: 'Live', ttlMs: 0 },
+  { label: '1 min', ttlMs: 60_000 },
+  { label: '5 min', ttlMs: 300_000 },
+  { label: '15 min', ttlMs: 900_000 },
+  { label: '1 hour', ttlMs: 3_600_000 },
+  { label: '6 hours', ttlMs: 21_600_000 },
+  { label: 'Daily', ttlMs: 86_400_000 }
+];
+
+export const DEFAULT_REFRESH_TTL_MS = 3_600_000;
+
+export function labelForTtl(ttlMs: number): string {
+  const preset = REFRESH_PRESETS.find((p) => p.ttlMs === ttlMs);
+  return preset ? preset.label : `${ttlMs} ms`;
+}
+
+function refreshBlock(ttlMs: number | undefined): string {
+  if (ttlMs === undefined) return '';
+  return (
+    `Refresh cadence: ${labelForTtl(ttlMs)} (use ttlMs = ${ttlMs} in your window.cache.get calls). Honor this exact value.\n\n`
+  );
+}
+
+export function buildPrompt(
+  userPrompt: string,
+  providers: PublicProviderForPrompt[] = [],
+  refreshTtlMs?: number
+): string {
+  return CODEX_SYSTEM_PROMPT + providersBlock(providers) + refreshBlock(refreshTtlMs) + "The user's request:\n" + userPrompt;
 }
 
 export const PROVIDER_LOOKUP_OUTPUT_FILE = 'provider.json';
@@ -134,7 +168,8 @@ export function buildProviderLookupPrompt(query: string): string {
 export function buildChatPrompt({
   messages,
   currentHtml = null,
-  providers = []
+  providers = [],
+  refreshTtlMs
 }: BuildChatPromptOptions): string {
   const userMessages = messages.filter((m) => m.role === 'user');
   const latest = userMessages[userMessages.length - 1]?.text ?? '';
@@ -154,6 +189,7 @@ export function buildChatPrompt({
   return [
     CODEX_SYSTEM_PROMPT,
     providersBlock(providers),
+    refreshBlock(refreshTtlMs),
     'Conversation history:',
     history || '(none)',
     '',

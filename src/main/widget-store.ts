@@ -25,6 +25,12 @@ export interface WidgetMeta {
    * Surfaced in the geek-mode tile popover.
    */
   summary?: WidgetSummary;
+  /**
+   * Refresh cadence in milliseconds. Passed to Codex so cache.get calls use
+   * this exact TTL. Undefined means "let Codex decide" (pre-existing widgets).
+   * 0 means "Live" — bypass the cache.
+   */
+  refreshTtlMs?: number;
 }
 
 export interface Widget {
@@ -35,6 +41,7 @@ export interface Widget {
   size?: WidgetSize;
   selectedProviderIds?: string[];
   summary?: WidgetSummary;
+  refreshTtlMs?: number;
 }
 
 export type WidgetChatRole = 'user' | 'status';
@@ -63,6 +70,7 @@ export interface WidgetStore {
   setSize(uuid: string, size: WidgetSize): Promise<void>;
   setProviders(uuid: string, providerIds: string[] | undefined): Promise<void>;
   setSummary(uuid: string, summary: WidgetSummary | undefined): Promise<void>;
+  setRefreshTtl(uuid: string, ttlMs: number | undefined): Promise<void>;
   replaceWidgetHtml(uuid: string, html: string): Promise<void>;
   readWidgetHtml(uuid: string): Promise<string | null>;
   widgetsRoot(): string;
@@ -139,7 +147,8 @@ export function createWidgetStore(root: string): WidgetStore {
             pinned: meta.pinned === true,
             size: meta.size,
             selectedProviderIds: meta.selectedProviderIds,
-            summary: meta.summary
+            summary: meta.summary,
+            refreshTtlMs: meta.refreshTtlMs
           });
         } catch {
           // Skip a widget whose meta.json was deleted out-of-band.
@@ -204,6 +213,14 @@ export function createWidgetStore(root: string): WidgetStore {
       const next = { ...meta };
       if (summary === undefined) delete next.summary;
       else next.summary = summary;
+      await writeMeta(uuid, next);
+    },
+
+    async setRefreshTtl(uuid, ttlMs) {
+      const meta = await readMeta(uuid);
+      const next = { ...meta };
+      if (ttlMs === undefined) delete next.refreshTtlMs;
+      else next.refreshTtlMs = ttlMs;
       await writeMeta(uuid, next);
     },
 

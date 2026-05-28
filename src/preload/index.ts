@@ -18,6 +18,7 @@ export interface Widget {
   size?: WidgetSize;
   selectedProviderIds?: string[];
   summary?: WidgetSummary;
+  refreshTtlMs?: number;
 }
 
 export type WidgetChatRole = 'user' | 'status';
@@ -48,10 +49,10 @@ export type LookupProviderResult =
   | { ok: false; error: string };
 
 const api = {
-  createWidget: (prompt: string, selectedProviderIds?: string[]) =>
-    ipcRenderer.invoke('widget:create', prompt, selectedProviderIds) as Promise<{ uuid: string }>,
-  chatStartWidget: (message: string, selectedProviderIds?: string[]) =>
-    ipcRenderer.invoke('widget:chatStart', message, selectedProviderIds) as Promise<{ uuid: string }>,
+  createWidget: (prompt: string, selectedProviderIds?: string[], refreshTtlMs?: number) =>
+    ipcRenderer.invoke('widget:create', prompt, selectedProviderIds, refreshTtlMs) as Promise<{ uuid: string }>,
+  chatStartWidget: (message: string, selectedProviderIds?: string[], refreshTtlMs?: number) =>
+    ipcRenderer.invoke('widget:chatStart', message, selectedProviderIds, refreshTtlMs) as Promise<{ uuid: string }>,
   chatSendWidget: (uuid: string, message: string) =>
     ipcRenderer.invoke('widget:chatSend', uuid, message) as Promise<ChatResult>,
   listWidgetChat: (uuid: string) =>
@@ -65,6 +66,8 @@ const api = {
     ipcRenderer.invoke('widget:setSize', uuid, size) as Promise<{ ok: true } | { ok: false; error: string }>,
   setWidgetProviders: (uuid: string, providerIds: string[] | null) =>
     ipcRenderer.invoke('widget:setProviders', uuid, providerIds) as Promise<{ ok: true } | { ok: false; error: string }>,
+  setWidgetRefreshTtl: (uuid: string, ttlMs: number | null) =>
+    ipcRenderer.invoke('widget:setRefreshTtl', uuid, ttlMs) as Promise<{ ok: true } | { ok: false; error: string }>,
   listWidgets: () => ipcRenderer.invoke('widget:list') as Promise<Widget[]>,
   getWidgetMeta: (uuid: string) => ipcRenderer.invoke('widget:getMeta', uuid) as Promise<{ prompt: string; created_at: string }>,
   htmlUrl: (uuid: string) => ipcRenderer.invoke('widget:htmlUrl', uuid) as Promise<string>,
