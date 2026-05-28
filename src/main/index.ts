@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import type { WebContents } from 'electron';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { createWidgetStore } from './widget-store';
@@ -8,6 +9,27 @@ import { createPrefsStore } from './prefs-store';
 import { runCodex } from './codex-runner';
 import { registerIpc } from './ipc';
 import { createUpdateController } from './updater';
+import { isExternalHttpUrl } from './external-links';
+
+// Hand external http(s) URLs to the system default browser. Applied to both the
+// main window and every attached widget webview so:
+//   - <a target="_blank"> / window.open → opens in the user's browser, no new
+//     Electron window appears.
+//   - <a href="https://…"> click (no target) inside a widget → opens externally;
+//     the widget's own frame is not navigated away.
+// Internal navigations (file://, dev-server URL) pass through unchanged.
+function attachExternalLinkHandlers(contents: WebContents): void {
+  contents.setWindowOpenHandler(({ url }) => {
+    if (isExternalHttpUrl(url)) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  contents.on('will-navigate', (event, url) => {
+    if (isExternalHttpUrl(url) && url !== contents.getURL()) {
+      event.preventDefault();
+      void shell.openExternal(url);
+    }
+  });
+}
 
 let mainWindow: BrowserWindow | null = null;
 const APP_USER_MODEL_ID = 'com.owenmcgirr.useful-topmost';
@@ -51,6 +73,10 @@ function createWindow() {
       nodeIntegration: false,
       webviewTag: true
     }
+  });
+  attachExternalLinkHandlers(mainWindow.webContents);
+  mainWindow.webContents.on('did-attach-webview', (_event, webviewContents) => {
+    attachExternalLinkHandlers(webviewContents);
   });
   if (process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
