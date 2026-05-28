@@ -427,7 +427,9 @@ describe('Dashboard', () => {
 
     m.fireError('new-uuid', 'boom');
 
-    expect(await screen.findByText(/boom/)).toBeInTheDocument();
+    // 'boom' doesn't match a known pattern, so the tile shows the default
+    // friendly title. Raw stderr is hidden until "See details" is clicked.
+    expect(await screen.findByText(/widget generation failed/i)).toBeInTheDocument();
   });
 
   it('renders a gear button that opens Settings', async () => {

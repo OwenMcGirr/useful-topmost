@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { WidgetChatMessage } from '../preload';
 import type { PublicProvider } from '../main/secrets-store';
+import { categorizeError, stripFailedPrefix } from './errors';
 
 interface WidgetChatPanelProps {
   open: boolean;
@@ -168,6 +169,7 @@ export default function WidgetChatPanel({
   const [building, setBuilding] = useState(false);
   const [providers, setProviders] = useState<PublicProvider[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [expandedFailures, setExpandedFailures] = useState<Set<string>>(new Set());
   const [refreshTtlMs, setRefreshTtlMs] = useState<number>(DEFAULT_REFRESH_TTL_MS);
   const [refreshDirty, setRefreshDirty] = useState<boolean>(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -377,23 +379,91 @@ export default function WidgetChatPanel({
         {displayMessages.length === 0 ? (
           <div style={{ color: '#8b949e', fontSize: 13 }}>Describe what this widget should show.</div>
         ) : (
-          displayMessages.map((m) => (
-            <div
-              key={m.id}
-              style={{
-                alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-                maxWidth: '86%',
-                padding: '8px 10px',
-                borderRadius: 6,
-                background: m.role === 'user' ? '#1f6feb' : '#21262d',
-                color: '#e6edf3',
-                fontSize: 13,
-                whiteSpace: 'pre-wrap'
-              }}
-            >
-              {m.text}
-            </div>
-          ))
+          displayMessages.map((m) => {
+            if (m.status === 'failed') {
+              const stripped = stripFailedPrefix(m.text);
+              const friendly = categorizeError(stripped);
+              const expanded = expandedFailures.has(m.id);
+              return (
+                <div
+                  key={m.id}
+                  role="alert"
+                  style={{
+                    alignSelf: 'stretch',
+                    padding: '10px 12px',
+                    borderLeft: '3px solid #f85149',
+                    borderRadius: 6,
+                    background: 'rgba(248, 81, 73, 0.08)',
+                    color: '#e6edf3',
+                    fontSize: 13,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6
+                  }}
+                >
+                  <div style={{ color: '#f85149', fontWeight: 600 }}>{friendly.title}</div>
+                  {friendly.advice && <div style={{ opacity: 0.85 }}>{friendly.advice}</div>}
+                  <button
+                    style={{
+                      alignSelf: 'flex-start',
+                      background: 'transparent',
+                      color: '#e6edf3',
+                      border: '1px solid #30363d',
+                      borderRadius: 4,
+                      padding: '3px 8px',
+                      fontSize: 11,
+                      cursor: 'pointer'
+                    }}
+                    aria-expanded={expanded}
+                    onClick={() => {
+                      setExpandedFailures((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(m.id)) next.delete(m.id);
+                        else next.add(m.id);
+                        return next;
+                      });
+                    }}
+                  >
+                    {expanded ? 'Hide details' : 'See details'}
+                  </button>
+                  {expanded && (
+                    <pre
+                      style={{
+                        margin: 0,
+                        padding: 8,
+                        background: '#0d1117',
+                        border: '1px solid #30363d',
+                        borderRadius: 4,
+                        fontSize: 12,
+                        whiteSpace: 'pre-wrap',
+                        maxHeight: 160,
+                        overflowY: 'auto'
+                      }}
+                    >
+                      {stripped}
+                    </pre>
+                  )}
+                </div>
+              );
+            }
+            return (
+              <div
+                key={m.id}
+                style={{
+                  alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+                  maxWidth: '86%',
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  background: m.role === 'user' ? '#1f6feb' : '#21262d',
+                  color: '#e6edf3',
+                  fontSize: 13,
+                  whiteSpace: 'pre-wrap'
+                }}
+              >
+                {m.text}
+              </div>
+            );
+          })
         )}
       </div>
 
