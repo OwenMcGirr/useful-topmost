@@ -59,7 +59,23 @@ function createWindow() {
   }
 }
 
+// Single-instance lock. If another copy is already running, hand the focus to
+// it and quit silently. The second-instance event below restores and focuses
+// the existing window when a user re-launches the .exe / .desktop.
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+}
+
+app.on('second-instance', () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+});
+
 app.whenReady().then(async () => {
+  if (!gotLock) return;
   if (process.platform === 'win32') {
     app.setAppUserModelId(APP_USER_MODEL_ID);
   }
