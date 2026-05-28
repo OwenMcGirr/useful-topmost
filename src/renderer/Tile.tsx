@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { TileState } from './types';
-import type { WidgetSize } from '../preload';
+import type { WidgetSize, WidgetFetchLogEntry } from '../preload';
 import { categorizeError } from './errors';
 
 interface Props {
@@ -86,10 +86,26 @@ export default function Tile(props: Props) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [errorDetailsOpen, setErrorDetailsOpen] = useState(false);
+  const [fetchLog, setFetchLog] = useState<WidgetFetchLogEntry[]>([]);
 
   useEffect(() => {
     if (props.state.kind !== 'error') setErrorDetailsOpen(false);
   }, [props.state.kind]);
+
+  useEffect(() => {
+    if (!infoOpen || !props.geekMode) return;
+    let cancelled = false;
+    const load = () => {
+      void window.api.getWidgetFetchLog(props.uuid).then((entries) => {
+        if (!cancelled) setFetchLog(entries);
+      });
+    };
+    load();
+    // Refresh while the popover is open so a fresh fetch appears without
+    // having to close and reopen.
+    const timer = window.setInterval(load, 2000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [infoOpen, props.geekMode, props.uuid]);
 
   useEffect(() => {
     if (!confirmingDelete) return;
@@ -175,6 +191,39 @@ export default function Tile(props: Props) {
           ) : (
             <ul style={{ margin: 0, paddingLeft: 18 }}>
               {props.summary.sources.map((s) => <li key={s}>{s}</li>)}
+            </ul>
+          )}
+
+          <div style={{ fontSize: 11, opacity: 0.6, marginTop: 12, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+            Recent calls
+          </div>
+          {fetchLog.length === 0 ? (
+            <div style={{ opacity: 0.7 }}>No calls yet.</div>
+          ) : (
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', fontSize: 11 }}>
+              {[...fetchLog].reverse().map((entry, idx) => {
+                const failed = entry.status === 0 || entry.status >= 400;
+                let host = entry.url;
+                try { host = new URL(entry.url).host + new URL(entry.url).pathname; } catch { /* keep raw */ }
+                return (
+                  <li key={`${entry.at}-${idx}`} style={{ marginBottom: 4, lineHeight: 1.4 }}>
+                    <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`${entry.method} ${entry.url}`}>
+                      {entry.method} {host}
+                    </div>
+                    <div style={{ opacity: 0.8 }}>
+                      <span style={{ color: failed ? '#f85149' : '#3fb950' }}>
+                        {entry.status === 0 ? 'network error' : `${entry.status}`}
+                      </span>
+                      {' · '}{entry.durationMs} ms · {entry.responseBytes} bytes
+                    </div>
+                    {entry.errorBody && (
+                      <div style={{ color: '#f85149', opacity: 0.85, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={entry.errorBody}>
+                        {entry.errorBody}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

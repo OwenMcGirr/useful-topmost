@@ -264,6 +264,70 @@ describe('Tile', () => {
     expect(screen.queryByRole('button', { name: /data sources/i })).toBeNull();
   });
 
+  it('geek-mode popover shows recent calls from window.api.getWidgetFetchLog', async () => {
+    (window as any).api = {
+      getWidgetFetchLog: vi.fn(async () => [
+        { at: '2026-05-28T13:39:30.000Z', method: 'GET', url: 'https://api.cloudflare.com/client/v4/accounts', status: 200, durationMs: 287, responseBytes: 142 },
+        { at: '2026-05-28T13:39:31.000Z', method: 'GET', url: 'https://api.cloudflare.com/client/v4/zones', status: 401, durationMs: 102, responseBytes: 24, errorBody: '{"error":"unauthorized"}' }
+      ])
+    };
+    render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'live' }}
+        htmlUrl="file:///x"
+        widgetPreloadUrl=""
+        geekMode
+        summary={{ sources: ['Cloudflare API'] }}
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /data sources/i }));
+
+    const dialog = await screen.findByRole('dialog', { name: /data sources/i });
+    expect(dialog).toHaveTextContent(/Recent calls/i);
+    expect(dialog).toHaveTextContent(/api\.cloudflare\.com\/client\/v4\/accounts/);
+    expect(dialog).toHaveTextContent(/api\.cloudflare\.com\/client\/v4\/zones/);
+    expect(dialog).toHaveTextContent(/200/);
+    expect(dialog).toHaveTextContent(/401/);
+    expect(dialog).toHaveTextContent(/unauthorized/);
+  });
+
+  it('geek-mode popover shows "No calls yet." when fetch log is empty', async () => {
+    (window as any).api = {
+      getWidgetFetchLog: vi.fn(async () => [])
+    };
+    render(
+      <Tile
+        uuid="u1"
+        prompt="show clock"
+        state={{ kind: 'live' }}
+        htmlUrl="file:///x"
+        widgetPreloadUrl=""
+        geekMode
+        summary={{ sources: [] }}
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /data sources/i }));
+    expect(await screen.findByText(/no calls yet/i)).toBeInTheDocument();
+  });
+
   it('geek-mode info button shows the popover with summary sources', async () => {
     render(
       <Tile
