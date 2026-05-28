@@ -58,6 +58,8 @@ export interface ProviderLookupResultOk {
       | { type: 'query'; param: string }
       | { type: 'header'; name: string; scheme: 'none' | 'bearer' | 'basic' | 'token' };
     source: string;
+    /** Optional 1-3 sentence guide from Codex on where to sign up and where to find the key. */
+    instructions?: string;
   };
 }
 export interface ProviderLookupResultErr { ok: false; error: string }
@@ -117,6 +119,14 @@ export function parseProviderLookupResponse(raw: string): ProviderLookupResult {
   if (!isHttpUrl(parsed.source)) {
     return { ok: false, error: 'codex response missing valid source URL' };
   }
+  let instructions: string | undefined;
+  if (parsed.instructions !== undefined && parsed.instructions !== null) {
+    if (typeof parsed.instructions !== 'string') {
+      return { ok: false, error: 'codex response instructions must be a string when present' };
+    }
+    const trimmed = parsed.instructions.trim();
+    if (trimmed) instructions = trimmed;
+  }
 
   return {
     ok: true,
@@ -126,7 +136,8 @@ export function parseProviderLookupResponse(raw: string): ProviderLookupResult {
       auth: parsed.auth.type === 'query'
         ? { type: 'query', param: parsed.auth.param.trim() }
         : { type: 'header', name: parsed.auth.name.trim(), scheme: parsed.auth.scheme },
-      source: parsed.source
+      source: parsed.source,
+      ...(instructions !== undefined ? { instructions } : {})
     }
   };
 }

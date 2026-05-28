@@ -163,6 +163,52 @@ describe('SettingsModal', () => {
     expect(await screen.findByText(/stripe\.com\/docs\/api\/authentication/i)).toBeInTheDocument();
   });
 
+  it('describe-an-API lookup shows the where-to-get-the-key instructions when present', async () => {
+    const { api } = mockApi([]);
+    api.secrets.lookupProvider = vi.fn(async (_query: string) => ({
+      ok: true,
+      provider: {
+        name: 'Stripe',
+        hostnames: ['api.stripe.com'],
+        auth: { type: 'header', name: 'Authorization', scheme: 'bearer' },
+        source: 'https://stripe.com/docs/api/authentication',
+        instructions: 'Sign up at https://dashboard.stripe.com/register. Your test secret key is under Developers → API keys.'
+      }
+    })) as any;
+    (window as any).api = api;
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /add provider/i }));
+    await userEvent.type(screen.getByLabelText(/describe an api/i), 'Stripe');
+    await userEvent.click(screen.getByRole('button', { name: /^search$/i }));
+
+    const instructions = await screen.findByLabelText(/where to get the key/i);
+    expect(instructions).toHaveTextContent(/sign up at https:\/\/dashboard\.stripe\.com/i);
+    expect(instructions).toHaveTextContent(/developers → api keys/i);
+  });
+
+  it('describe-an-API lookup hides the instructions block when instructions are omitted', async () => {
+    const { api } = mockApi([]);
+    api.secrets.lookupProvider = vi.fn(async (_query: string) => ({
+      ok: true,
+      provider: {
+        name: 'OpenWeather',
+        hostnames: ['api.openweathermap.org'],
+        auth: { type: 'query', param: 'appid' },
+        source: 'https://openweathermap.org/appid'
+      }
+    })) as any;
+    (window as any).api = api;
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /add provider/i }));
+    await userEvent.type(screen.getByLabelText(/describe an api/i), 'OpenWeather');
+    await userEvent.click(screen.getByRole('button', { name: /^search$/i }));
+
+    await waitFor(() => expect(api.secrets.lookupProvider).toHaveBeenCalled());
+    expect(screen.queryByLabelText(/where to get the key/i)).toBeNull();
+  });
+
   it('describe-an-API lookup shows inline error and leaves form untouched on failure', async () => {
     const { api } = mockApi([]);
     api.secrets.lookupProvider = vi.fn(async (_query: string) => ({

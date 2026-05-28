@@ -75,6 +75,7 @@ export default function ApiProvidersSettings() {
   const [lookupBusy, setLookupBusy] = useState(false);
   const [lookupError, setLookupError] = useState('');
   const [lookupSource, setLookupSource] = useState('');
+  const [lookupInstructions, setLookupInstructions] = useState('');
   const [lookupElapsed, setLookupElapsed] = useState(0);
   const lookupStart = useRef<number | null>(null);
 
@@ -109,6 +110,7 @@ export default function ApiProvidersSettings() {
     setLookupQuery('');
     setLookupError('');
     setLookupSource('');
+    setLookupInstructions('');
   };
 
   const handleLookup = async () => {
@@ -118,6 +120,7 @@ export default function ApiProvidersSettings() {
     setLookupBusy(true);
     setLookupError('');
     setLookupSource('');
+    setLookupInstructions('');
     try {
       const result = await window.api.secrets.lookupProvider(query);
       if (!result.ok) {
@@ -140,6 +143,7 @@ export default function ApiProvidersSettings() {
         headerCustomPrefix: ''
       });
       setLookupSource(provider.source);
+      setLookupInstructions(provider.instructions ?? '');
     } catch (e: any) {
       setLookupError(e?.message ?? String(e ?? 'unknown error'));
     } finally {
@@ -149,6 +153,7 @@ export default function ApiProvidersSettings() {
 
   const handleLookupCancel = async () => {
     await window.api.secrets.cancelLookup();
+    setLookupInstructions('');
   };
 
   const startEdit = (p: PublicProvider) => {
@@ -274,6 +279,14 @@ export default function ApiProvidersSettings() {
               {lookupSource && (
                 <div style={{ color: '#3fb950', fontSize: 12, marginTop: 6 }}>
                   Filled from: <a href={lookupSource} target="_blank" rel="noreferrer" style={{ color: '#58a6ff' }}>{lookupSource}</a>
+                </div>
+              )}
+              {lookupInstructions && (
+                <div
+                  aria-label="Where to get the key"
+                  style={{ color: '#8b949e', fontSize: 12, marginTop: 6, maxHeight: 120, overflowY: 'auto', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}
+                >
+                  {lookupInstructions}
                 </div>
               )}
             </div>

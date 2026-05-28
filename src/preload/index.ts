@@ -44,6 +44,7 @@ export type LookupProviderResult =
           | { type: 'query'; param: string }
           | { type: 'header'; name: string; scheme: 'none' | 'bearer' | 'basic' | 'token' };
         source: string;
+        instructions?: string;
       };
     }
   | { ok: false; error: string };

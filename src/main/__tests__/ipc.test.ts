@@ -900,6 +900,46 @@ describe('ipc', () => {
     }));
     expect(result.ok).toBe(true);
     expect((result as any).provider.auth).toEqual({ type: 'query', param: 'appid' });
+    expect((result as any).provider.instructions).toBeUndefined();
+  });
+
+  it('parseProviderLookupResponse surfaces instructions and trims whitespace', () => {
+    const result = parseProviderLookupResponse(JSON.stringify({
+      ok: true,
+      name: 'Stripe',
+      hostnames: ['api.stripe.com'],
+      auth: { type: 'header', name: 'Authorization', scheme: 'basic' },
+      source: 'https://docs.stripe.com/api/authentication',
+      instructions: '  Sign up at https://dashboard.stripe.com/register. Your test secret key is at Developers → API keys.  '
+    }));
+    expect(result.ok).toBe(true);
+    expect((result as any).provider.instructions).toBe('Sign up at https://dashboard.stripe.com/register. Your test secret key is at Developers → API keys.');
+  });
+
+  it('parseProviderLookupResponse drops whitespace-only instructions', () => {
+    const result = parseProviderLookupResponse(JSON.stringify({
+      ok: true,
+      name: 'Stripe',
+      hostnames: ['api.stripe.com'],
+      auth: { type: 'header', name: 'Authorization', scheme: 'basic' },
+      source: 'https://docs.stripe.com/api/authentication',
+      instructions: '   '
+    }));
+    expect(result.ok).toBe(true);
+    expect((result as any).provider.instructions).toBeUndefined();
+  });
+
+  it('parseProviderLookupResponse rejects non-string instructions', () => {
+    const result = parseProviderLookupResponse(JSON.stringify({
+      ok: true,
+      name: 'Stripe',
+      hostnames: ['api.stripe.com'],
+      auth: { type: 'header', name: 'Authorization', scheme: 'basic' },
+      source: 'https://docs.stripe.com/api/authentication',
+      instructions: 42
+    }));
+    expect(result.ok).toBe(false);
+    expect((result as any).error).toMatch(/instructions/);
   });
 
   it('secrets:test issues a GET to the first hostname with auth injected', async () => {
