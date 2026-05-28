@@ -97,6 +97,12 @@ const api = {
     ipcRenderer.on('widget:error', handler);
     return () => ipcRenderer.removeListener('widget:error', handler);
   },
+  onWidgetPlan: (cb: (uuid: string, providers: Array<{ name: string; hostname: string }>) => void) => {
+    const handler = (_e: IpcRendererEvent, payload: { uuid: string; providers: Array<{ name: string; hostname: string }> }) =>
+      cb(payload.uuid, payload.providers);
+    ipcRenderer.on('widget:plan', handler);
+    return () => ipcRenderer.removeListener('widget:plan', handler);
+  },
   secrets: {
     list: () => ipcRenderer.invoke('secrets:list') as Promise<PublicProvider[]>,
     save: (p: Provider | (Omit<Provider, 'value'> & { value?: string })) =>

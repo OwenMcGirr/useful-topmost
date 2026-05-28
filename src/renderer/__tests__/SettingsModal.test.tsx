@@ -163,6 +163,34 @@ describe('SettingsModal', () => {
     expect(await screen.findByText(/stripe\.com\/docs\/api\/authentication/i)).toBeInTheDocument();
   });
 
+  it('opening with addProviderSeedQuery activates the providers section and auto-runs the lookup', async () => {
+    const { api } = mockApi([]);
+    api.secrets.lookupProvider = vi.fn(async (_query: string) => ({
+      ok: true,
+      provider: {
+        name: 'Cloudflare API',
+        hostnames: ['api.cloudflare.com'],
+        auth: { type: 'header', name: 'Authorization', scheme: 'bearer' },
+        source: 'https://developers.cloudflare.com/api/'
+      }
+    })) as any;
+    const onAddProviderConsumed = vi.fn();
+    (window as any).api = api;
+    render(
+      <SettingsModal
+        open={true}
+        onClose={() => {}}
+        addProviderSeedQuery="Cloudflare API"
+        onAddProviderConsumed={onAddProviderConsumed}
+      />
+    );
+
+    expect(await screen.findByRole('button', { name: /api providers/i })).toHaveAttribute('aria-current', 'page');
+    await waitFor(() => expect(api.secrets.lookupProvider).toHaveBeenCalledWith('Cloudflare API'));
+    expect((await screen.findByLabelText(/^name$/i) as HTMLInputElement).value).toBe('Cloudflare API');
+    expect(onAddProviderConsumed).toHaveBeenCalled();
+  });
+
   it('describe-an-API lookup shows the where-to-get-the-key instructions when present', async () => {
     const { api } = mockApi([]);
     api.secrets.lookupProvider = vi.fn(async (_query: string) => ({

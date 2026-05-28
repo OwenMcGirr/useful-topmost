@@ -110,6 +110,7 @@ export default function Dashboard() {
   const [onboardingDismissed, setOnboardingDismissed] = useState<boolean | null>(null);
   const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' });
   const [geekMode, setGeekMode] = useState(false);
+  const [addProviderSeedQuery, setAddProviderSeedQuery] = useState<string | null>(null);
   const editBuilds = useRef<Set<string>>(new Set());
   const gridRef = useRef<HTMLDivElement | null>(null);
 
@@ -497,6 +498,7 @@ export default function Dashboard() {
         onDeleted={(uuid) => setTiles((prev) => prev.filter((t) => t.uuid !== uuid))}
         onCreated={handleChatCreated}
         onSent={handleChatSent}
+        onAddProviderRequest={(name) => { setAddProviderSeedQuery(name); setSettingsOpen(true); }}
       />
       <SettingsModal
         open={settingsOpen}
@@ -511,6 +513,8 @@ export default function Dashboard() {
           handleEditChat(tile);
         }}
         onDeleteWidget={(uuid) => void handleDelete(uuid)}
+        addProviderSeedQuery={addProviderSeedQuery}
+        onAddProviderConsumed={() => setAddProviderSeedQuery(null)}
       />
       <UpdatePrompt state={updateState} />
       {showWelcome && (

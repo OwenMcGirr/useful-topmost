@@ -73,6 +73,86 @@ describe('ipc', () => {
     expect(sender.sent).toContainEqual({ channel: 'widget:error', payload: { uuid, error: 'boom' } });
   });
 
+  it('widget:create polls plan.json and emits widget:plan with parsed providers (filters bad entries)', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn(async ({ cwd }: any) => {
+      await fs.writeFile(path.join(cwd, 'plan.json'), JSON.stringify({
+        providers_needed: [
+          { name: 'Cloudflare API', hostname: 'api.cloudflare.com' },
+          { name: '   ', hostname: 'api.bad.com' },
+          { name: 'No host', hostname: '' },
+          { name: 'Stripe', hostname: 'api.stripe.com' }
+        ]
+      }));
+      // Sleep a tick so the plan poller has a chance to read before exit.
+      await new Promise((r) => setTimeout(r, 600));
+      await fs.writeFile(path.join(cwd, 'index.html'), '<html></html>');
+      return { ok: true };
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const { uuid } = await ipc.invoke('widget:create', 'show cloudflare stats');
+    await new Promise((r) => setTimeout(r, 800));
+
+    const planEvents = sender.sent.filter((m) => m.channel === 'widget:plan' && m.payload.uuid === uuid);
+    expect(planEvents).toHaveLength(1);
+    expect(planEvents[0].payload.providers).toEqual([
+      { name: 'Cloudflare API', hostname: 'api.cloudflare.com' },
+      { name: 'Stripe', hostname: 'api.stripe.com' }
+    ]);
+  });
+
+  it('widget:create does not emit widget:plan when plan.json is malformed', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn(async ({ cwd }: any) => {
+      await fs.writeFile(path.join(cwd, 'plan.json'), 'not json');
+      await new Promise((r) => setTimeout(r, 600));
+      await fs.writeFile(path.join(cwd, 'index.html'), '<html></html>');
+      return { ok: true };
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const { uuid } = await ipc.invoke('widget:create', 'p');
+    await new Promise((r) => setTimeout(r, 800));
+
+    expect(sender.sent.filter((m) => m.channel === 'widget:plan' && m.payload.uuid === uuid)).toHaveLength(0);
+  });
+
+  it('widget:chatSend does not emit widget:plan (revisions skip plan polling)', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn(async ({ cwd }: any) => {
+      // Even if Codex did write a plan.json during a revision, no event should fire.
+      await fs.writeFile(path.join(cwd, 'plan.json'), JSON.stringify({
+        providers_needed: [{ name: 'Stripe', hostname: 'api.stripe.com' }]
+      }));
+      await fs.writeFile(path.join(cwd, 'index.html'), '<html></html>');
+      return { ok: true };
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const uuid = await store.create('p');
+    await fs.writeFile(path.join(store.dir(uuid), 'index.html'), '<html>v1</html>');
+    await ipc.invoke('widget:chatSend', uuid, 'tweak the title');
+    await new Promise((r) => setTimeout(r, 200));
+
+    expect(sender.sent.filter((m) => m.channel === 'widget:plan')).toHaveLength(0);
+  });
+
   it('widget:create persists summary.json sidecar to meta.summary on success (with name)', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);

@@ -66,7 +66,12 @@ function describeTestResult(result: TestResult): { text: string; color: string }
   return { text: result.error, color: '#f85149' };
 }
 
-export default function ApiProvidersSettings() {
+interface ApiProvidersSettingsProps {
+  seedLookupQuery?: string | null;
+  onSeedConsumed?: () => void;
+}
+
+export default function ApiProvidersSettings(props: ApiProvidersSettingsProps = {}) {
   const [providers, setProviders] = useState<PublicProvider[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string>('');
@@ -150,6 +155,49 @@ export default function ApiProvidersSettings() {
       setLookupBusy(false);
     }
   };
+
+  useEffect(() => {
+    const seed = props.seedLookupQuery;
+    if (!seed) return;
+    setDraft({ ...empty, id: crypto.randomUUID() });
+    setError('');
+    setLookupError('');
+    setLookupSource('');
+    setLookupInstructions('');
+    setLookupQuery(seed);
+    void (async () => {
+      setLookupBusy(true);
+      try {
+        const result = await window.api.secrets.lookupProvider(seed);
+        if (!result.ok) {
+          setLookupError(result.error);
+          return;
+        }
+        const { provider } = result;
+        if (!provider || !Array.isArray(provider.hostnames) || !provider.auth) {
+          setLookupError(`unexpected response shape: ${JSON.stringify(result)}`);
+          return;
+        }
+        setDraft((prev) => prev ? {
+          ...prev,
+          name: provider.name,
+          hostnamesText: provider.hostnames.join('\n'),
+          authType: provider.auth.type,
+          param: provider.auth.type === 'query' ? provider.auth.param : '',
+          headerName: provider.auth.type === 'header' ? provider.auth.name : '',
+          headerScheme: provider.auth.type === 'header' ? provider.auth.scheme : 'none',
+          headerCustomPrefix: ''
+        } : prev);
+        setLookupSource(provider.source);
+        setLookupInstructions(provider.instructions ?? '');
+      } catch (e: any) {
+        setLookupError(e?.message ?? String(e ?? 'unknown error'));
+      } finally {
+        setLookupBusy(false);
+      }
+    })();
+    props.onSeedConsumed?.();
+  }, [props.seedLookupQuery]);
 
   const handleLookupCancel = async () => {
     await window.api.secrets.cancelLookup();

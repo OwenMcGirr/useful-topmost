@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import WidgetChatPanel from '../WidgetChatPanel';
 
 function mockApi(opts: { providers?: Array<{ id: string; name: string; hostnames: string[] }> } = {}) {
   let readyHandler: ((uuid: string) => void) | null = null;
   let errorHandler: ((uuid: string, error: string) => void) | null = null;
+  let planHandler: ((uuid: string, providers: Array<{ name: string; hostname: string }>) => void) | null = null;
   const providers = opts.providers ?? [];
   const api = {
     chatStartWidget: vi.fn(async () => ({ uuid: 'new-widget' })),
@@ -16,6 +17,7 @@ function mockApi(opts: { providers?: Array<{ id: string; name: string; hostnames
     htmlUrl: vi.fn(async (uuid: string) => `file:///${uuid}/index.html`),
     onWidgetReady: vi.fn((cb: any) => { readyHandler = cb; return () => {}; }),
     onWidgetError: vi.fn((cb: any) => { errorHandler = cb; return () => {}; }),
+    onWidgetPlan: vi.fn((cb: any) => { planHandler = cb; return () => {}; }),
     deleteWidget: vi.fn(async () => ({ ok: true })),
     setWidgetProviders: vi.fn(async () => ({ ok: true })),
     setWidgetRefreshTtl: vi.fn(async () => ({ ok: true })),
@@ -26,7 +28,8 @@ function mockApi(opts: { providers?: Array<{ id: string; name: string; hostnames
   return {
     api,
     fireReady: (uuid: string) => readyHandler?.(uuid),
-    fireError: (uuid: string, error: string) => errorHandler?.(uuid, error)
+    fireError: (uuid: string, error: string) => errorHandler?.(uuid, error),
+    firePlan: (uuid: string, providers: Array<{ name: string; hostname: string }>) => planHandler?.(uuid, providers)
   };
 }
 
@@ -314,6 +317,67 @@ describe('WidgetChatPanel', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /see details/i }));
     expect(screen.getByText(/codex exited with code 1: rate limit exceeded/i)).toBeInTheDocument();
+  });
+
+  it('plan banner appears for missing providers and "Add provider" calls onAddProviderRequest', async () => {
+    const m = mockApi({ providers: [
+      { id: 'p1', name: 'Stripe', hostnames: ['api.stripe.com'] }
+    ]});
+    const onAddProviderRequest = vi.fn();
+    (window as any).api = m.api;
+    render(
+      <WidgetChatPanel
+        open={true}
+        mode="edit"
+        widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
+        widgetPreloadUrl=""
+        onClose={() => {}}
+        onCreated={() => {}}
+        onSent={() => {}}
+        onDeleted={() => {}}
+        onAddProviderRequest={onAddProviderRequest}
+      />
+    );
+
+    // Wait for the panel to subscribe.
+    await screen.findByLabelText(/widget message/i);
+
+    await act(async () => {
+      m.firePlan('u1', [
+        { name: 'Cloudflare API', hostname: 'api.cloudflare.com' },
+        { name: 'Stripe', hostname: 'api.stripe.com' } // already configured, should be filtered
+      ]);
+    });
+
+    const banner = await screen.findByText(/This widget will use Cloudflare API\./i);
+    expect(banner).toBeInTheDocument();
+    expect(screen.queryByText(/This widget will use Stripe/)).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: /^add provider$/i }));
+    expect(onAddProviderRequest).toHaveBeenCalledWith('Cloudflare API');
+  });
+
+  it('plan banner ignores events for other widget uuids', async () => {
+    const m = mockApi();
+    (window as any).api = m.api;
+    render(
+      <WidgetChatPanel
+        open={true}
+        mode="edit"
+        widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
+        widgetPreloadUrl=""
+        onClose={() => {}}
+        onCreated={() => {}}
+        onSent={() => {}}
+        onDeleted={() => {}}
+      />
+    );
+
+    await screen.findByLabelText(/widget message/i);
+    await act(async () => {
+      m.firePlan('other-uuid', [{ name: 'Cloudflare API', hostname: 'api.cloudflare.com' }]);
+    });
+    expect(screen.queryByText(/This widget will use/i)).toBeNull();
   });
 
   it('refreshes preview after widget:ready', async () => {

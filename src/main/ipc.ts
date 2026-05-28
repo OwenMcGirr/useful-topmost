@@ -7,7 +7,7 @@ import type { SecretsStore, Provider } from './secrets-store';
 import type { OnboardingStore } from './onboarding-store';
 import type { PrefsStore } from './prefs-store';
 import type { runCodex as RunCodexFn } from './codex-runner';
-import { PROVIDER_LOOKUP_OUTPUT_FILE, WIDGET_SUMMARY_OUTPUT_FILE, buildChatPrompt, buildPrompt, buildProviderLookupPrompt } from './codex-prompt';
+import { PROVIDER_LOOKUP_OUTPUT_FILE, WIDGET_PLAN_OUTPUT_FILE, WIDGET_SUMMARY_OUTPUT_FILE, buildChatPrompt, buildPrompt, buildProviderLookupPrompt } from './codex-prompt';
 import { appFetch, filterProviders, injectAuth } from './proxy';
 import { runLocalExec, widgetCwdFromSenderUrl } from './local-exec';
 import { getCacheEntry, writeCacheEntry } from './widget-cache-store';
@@ -167,6 +167,52 @@ async function readWidgetSummary(dir: string): Promise<{ sources: string[]; name
   }
 }
 
+export interface WidgetPlanProvider { name: string; hostname: string }
+
+export async function readWidgetPlan(dir: string): Promise<WidgetPlanProvider[] | undefined> {
+  try {
+    const raw = await fs.readFile(path.join(dir, WIDGET_PLAN_OUTPUT_FILE), 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return undefined;
+    const list = (parsed as any).providers_needed;
+    if (!Array.isArray(list)) return undefined;
+    const out: WidgetPlanProvider[] = [];
+    for (const entry of list) {
+      if (!entry || typeof entry !== 'object') continue;
+      const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+      const hostname = typeof entry.hostname === 'string' ? entry.hostname.trim() : '';
+      if (!name || !hostname) continue;
+      out.push({ name, hostname });
+    }
+    return out;
+  } catch {
+    return undefined;
+  }
+}
+
+function pollForPlan(opts: {
+  dir: string;
+  uuid: string;
+  signal: AbortSignal;
+  send: (providers: WidgetPlanProvider[]) => void;
+}): void {
+  let stopped = false;
+  const stop = () => { stopped = true; };
+  opts.signal.addEventListener('abort', stop);
+  const tick = async () => {
+    if (stopped) return;
+    const providers = await readWidgetPlan(opts.dir);
+    if (stopped) return;
+    if (providers) {
+      stopped = true;
+      opts.send(providers);
+      return;
+    }
+    setTimeout(() => { void tick(); }, 500);
+  };
+  void tick();
+}
+
 export function registerIpc(
   ipcMain: IpcMain,
   widgets: WidgetStore,
@@ -220,6 +266,12 @@ export function registerIpc(
     const controller = trackRun(uuid);
     void (async () => {
       const sender = getSender();
+      pollForPlan({
+        dir: widgets.dir(uuid),
+        uuid,
+        signal: controller.signal,
+        send: (providers) => sender.send('widget:plan', { uuid, providers })
+      });
       const providers = filterProviders(await secrets.list(), selectedProviderIds);
       const result = await runCodex({
         prompt: buildPrompt(prompt, providers, refreshTtlMs),
@@ -257,6 +309,12 @@ export function registerIpc(
     const controller = trackRun(uuid);
     void (async () => {
       const sender = getSender();
+      pollForPlan({
+        dir: widgets.dir(uuid),
+        uuid,
+        signal: controller.signal,
+        send: (providers) => sender.send('widget:plan', { uuid, providers })
+      });
       const meta = await widgets.getMeta(uuid);
       const providers = filterProviders(await secrets.list(), meta.selectedProviderIds);
       const result = await runCodex({
