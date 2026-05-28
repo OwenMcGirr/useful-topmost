@@ -286,6 +286,65 @@ describe('SettingsModal', () => {
     await waitFor(() => expect(state).toHaveLength(0));
   });
 
+  it('Widgets section lists every widget with edit + delete; empty list shows hint', async () => {
+    const { api } = mockApi([]);
+    (api as any).listWidgets = vi.fn(async () => []);
+    (window as any).api = api;
+    const { rerender } = render(<SettingsModal open={true} onClose={() => {}} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /^widgets$/i }));
+    expect(await screen.findByText(/no widgets yet/i)).toBeInTheDocument();
+
+    (api as any).listWidgets = vi.fn(async () => [
+      { uuid: 'a', prompt: 'show weather', created_at: '2026-05-01T12:00:00Z', pinned: true },
+      { uuid: 'b', prompt: 'top hn stories', created_at: '2026-05-15T12:00:00Z' }
+    ]);
+    rerender(<SettingsModal open={false} onClose={() => {}} />);
+    rerender(<SettingsModal open={true} onClose={() => {}} />);
+    await userEvent.click(await screen.findByRole('button', { name: /^widgets$/i }));
+
+    expect(await screen.findByText('show weather')).toBeInTheDocument();
+    expect(screen.getByText('top hn stories')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^edit$/i })).toHaveLength(2);
+  });
+
+  it('Widgets section: clicking Edit invokes onEditWidget with the row uuid', async () => {
+    const { api } = mockApi([]);
+    (api as any).listWidgets = vi.fn(async () => [
+      { uuid: 'a', prompt: 'show weather', created_at: '' }
+    ]);
+    const onEditWidget = vi.fn();
+    (window as any).api = api;
+    render(<SettingsModal open={true} onClose={() => {}} onEditWidget={onEditWidget} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /^widgets$/i }));
+    await userEvent.click(await screen.findByRole('button', { name: /^edit$/i }));
+
+    expect(onEditWidget).toHaveBeenCalledWith('a');
+  });
+
+  it('Widgets section: Delete requires two clicks, then invokes onDeleteWidget and removes the row', async () => {
+    const { api } = mockApi([]);
+    (api as any).listWidgets = vi.fn(async () => [
+      { uuid: 'a', prompt: 'show weather', created_at: '' },
+      { uuid: 'b', prompt: 'top hn stories', created_at: '' }
+    ]);
+    const onDeleteWidget = vi.fn();
+    (window as any).api = api;
+    render(<SettingsModal open={true} onClose={() => {}} onDeleteWidget={onDeleteWidget} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /^widgets$/i }));
+
+    const row = (await screen.findByText('show weather')).closest('[data-row]') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: /^delete$/i }));
+    expect(onDeleteWidget).not.toHaveBeenCalled();
+
+    await userEvent.click(within(row).getByRole('button', { name: /click to confirm/i }));
+    expect(onDeleteWidget).toHaveBeenCalledWith('a');
+    expect(screen.queryByText('show weather')).toBeNull();
+    expect(screen.getByText('top hn stories')).toBeInTheDocument();
+  });
+
   it('Geek Mode section toggle hydrates from prefs and persists changes', async () => {
     const { api } = mockApi([]);
     api.prefs.get = vi.fn(async () => ({ geekMode: false }));

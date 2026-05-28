@@ -504,6 +504,13 @@ export default function Dashboard() {
         updateState={updateState}
         onCheckUpdates={() => void window.api.updates.checkNow().then(setUpdateState)}
         onRestartUpdate={() => void window.api.updates.restart()}
+        onEditWidget={(uuid) => {
+          const tile = tiles.find((t) => t.uuid === uuid);
+          if (!tile) return;
+          setSettingsOpen(false);
+          handleEditChat(tile);
+        }}
+        onDeleteWidget={(uuid) => void handleDelete(uuid)}
       />
       <UpdatePrompt state={updateState} />
       {showWelcome && (

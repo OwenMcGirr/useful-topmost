@@ -3,9 +3,10 @@ import type { UpdateState } from '../preload';
 import ApiProvidersSettings from './ApiProvidersSettings';
 import GeekModeSettings from './GeekModeSettings';
 import UpdateSettings from './UpdateSettings';
+import WidgetsSettings from './WidgetsSettings';
 import { BTN } from './settingsStyles';
 
-type Section = 'providers' | 'geek' | 'updates';
+type Section = 'providers' | 'widgets' | 'geek' | 'updates';
 
 interface Props {
   open: boolean;
@@ -13,6 +14,8 @@ interface Props {
   updateState?: UpdateState;
   onCheckUpdates?: () => void;
   onRestartUpdate?: () => void;
+  onEditWidget?: (uuid: string) => void;
+  onDeleteWidget?: (uuid: string) => void;
 }
 
 const OVERLAY: React.CSSProperties = {
@@ -86,7 +89,9 @@ export default function SettingsModal({
   onClose,
   updateState = { status: 'idle' },
   onCheckUpdates = () => {},
-  onRestartUpdate = () => {}
+  onRestartUpdate = () => {},
+  onEditWidget = () => {},
+  onDeleteWidget = () => {}
 }: Props) {
   const [section, setSection] = useState<Section>('providers');
 
@@ -109,6 +114,13 @@ export default function SettingsModal({
               API Providers
             </button>
             <button
+              style={sidebarButton(section === 'widgets')}
+              aria-current={section === 'widgets' ? 'page' : undefined}
+              onClick={() => setSection('widgets')}
+            >
+              Widgets
+            </button>
+            <button
               style={sidebarButton(section === 'geek')}
               aria-current={section === 'geek' ? 'page' : undefined}
               onClick={() => setSection('geek')}
@@ -125,6 +137,7 @@ export default function SettingsModal({
           </nav>
           <div style={CONTENT}>
             {section === 'providers' && <ApiProvidersSettings />}
+            {section === 'widgets' && <WidgetsSettings onEdit={onEditWidget} onDelete={onDeleteWidget} />}
             {section === 'geek' && <GeekModeSettings />}
             {section === 'updates' && (
               <UpdateSettings
