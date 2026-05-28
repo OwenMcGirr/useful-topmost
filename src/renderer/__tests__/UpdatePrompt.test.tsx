@@ -25,7 +25,7 @@ describe('UpdatePrompt', () => {
   it('shows restart action for downloaded updates', async () => {
     render(<UpdatePrompt state={{ status: 'downloaded', version: '2026.1.0-alpha.2' }} />);
 
-    expect(screen.getByText('Update 2026.1.0-alpha.2 ready')).toBeInTheDocument();
+    expect(screen.getByText('Update 2026.1.0-alpha.2 ready.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /restart/i }));
 
     expect(window.api.updates.restart).toHaveBeenCalledTimes(1);

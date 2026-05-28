@@ -22,9 +22,9 @@ interface Props {
 }
 
 const SIZE_LABEL: Record<WidgetSize, string> = {
-  small: 'size 1×1',
-  wide: 'size 2×1',
-  large: 'size 2×2'
+  small: 'Size 1×1',
+  wide: 'Size 2×1',
+  large: 'Size 2×2'
 };
 
 const TILE: React.CSSProperties = {
@@ -73,7 +73,7 @@ function BuildingState({ onCancel }: { onCancel: () => void }) {
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center', justifyContent: 'center', color: '#8b949e' }}>
       <span className="spinner" aria-hidden />
-      <div style={{ fontSize: 13 }}>building widget… {elapsed}s</div>
+      <div style={{ fontSize: 13 }}>Building widget… {elapsed}s</div>
       <button style={{ ...BTN, fontSize: 12 }} onClick={onCancel}>Cancel</button>
     </div>
   );
@@ -122,11 +122,11 @@ export default function Tile(props: Props) {
 
   return (
     <div className="tile" style={TILE}>
-      {props.pinned === true && <div data-pin-indicator aria-label="pinned" style={PIN_BADGE} />}
+      {props.pinned === true && <div data-pin-indicator aria-label="Pinned" style={PIN_BADGE} />}
       <div className="tile-chrome" data-chrome style={CHROME}>
         {props.geekMode === true && (
           <button
-            aria-label="data sources"
+            aria-label="Data sources"
             title="Data sources"
             style={BTN}
             onClick={() => setInfoOpen((v) => !v)}
@@ -138,27 +138,27 @@ export default function Tile(props: Props) {
           {SIZE_LABEL[props.size ?? 'small']}
         </button>
         <button style={BTN} onClick={props.onTogglePinned}>
-          {props.pinned === true ? 'unpin' : 'pin'}
+          {props.pinned === true ? 'Unpin' : 'Pin'}
         </button>
         {props.state.kind === 'live' && (
           <>
-            <button style={BTN} onClick={handleRefresh}>refresh</button>
-            <button style={BTN} onClick={props.onEditChat}>edit with chat</button>
+            <button style={BTN} onClick={handleRefresh}>Refresh</button>
+            <button style={BTN} onClick={props.onEditChat}>Edit with chat</button>
           </>
         )}
         {props.state.kind === 'error' && (
-          <button style={BTN} onClick={props.onRetry}>retry</button>
+          <button style={BTN} onClick={props.onRetry}>Retry</button>
         )}
         <button
           style={confirmingDelete ? { ...BTN, color: '#f85149', borderColor: '#f85149' } : BTN}
           onClick={handleDelete}
         >
-          {confirmingDelete ? 'click to confirm' : 'delete'}
+          {confirmingDelete ? 'Click to confirm' : 'Delete'}
         </button>
       </div>
 
       {infoOpen && (
-        <div ref={popoverRef} role="dialog" aria-label="data sources" style={POPOVER}>
+        <div ref={popoverRef} role="dialog" aria-label="Data sources" style={POPOVER}>
           <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.4 }}>
             Data sources
           </div>

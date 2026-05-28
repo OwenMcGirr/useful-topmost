@@ -268,7 +268,7 @@ describe('Dashboard', () => {
     triggerDashboardResize();
 
     await waitFor(() => expect(renderedWidgetSrcs(container).some((src) => src.includes('widget-5'))).toBe(true));
-    expect(screen.getAllByRole('button', { name: 'unpin' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Unpin' })).toHaveLength(1);
   });
 
   it('shuffle changes only unpinned filler when pinned widgets fit', async () => {
@@ -322,7 +322,7 @@ describe('Dashboard', () => {
     triggerDashboardResize(464, 364);
 
     await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(1));
-    expect(screen.queryAllByRole('button', { name: 'pin' })).toHaveLength(0);
+    expect(screen.queryAllByRole('button', { name: 'Pin' })).toHaveLength(0);
   });
 
   it('clicking pin and unpin persists and updates tile state', async () => {
@@ -332,13 +332,13 @@ describe('Dashboard', () => {
 
     render(<Dashboard />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'pin' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Pin' }));
     expect(m.api.setWidgetPinned).toHaveBeenCalledWith('widget-1', true);
-    expect(await screen.findByRole('button', { name: 'unpin' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Unpin' })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'unpin' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Unpin' }));
     expect(m.api.setWidgetPinned).toHaveBeenCalledWith('widget-1', false);
-    expect(await screen.findByRole('button', { name: 'pin' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Pin' })).toBeInTheDocument();
   });
 
   it('failed pin IPC reverts tile state', async () => {
@@ -349,9 +349,9 @@ describe('Dashboard', () => {
 
     render(<Dashboard />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'pin' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Pin' }));
 
-    expect(await screen.findByRole('button', { name: 'pin' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Pin' })).toBeInTheDocument();
   });
 
   it('building tile can be pinned', async () => {
@@ -362,7 +362,7 @@ describe('Dashboard', () => {
     await userEvent.click(await screen.findByRole('button', { name: /new widget/i }));
     await userEvent.type(screen.getByLabelText(/widget message/i), 'show weather');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
-    await userEvent.click(await screen.findByRole('button', { name: 'pin' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Pin' }));
 
     expect(m.api.setWidgetPinned).toHaveBeenCalledWith('new-uuid', true);
   });
@@ -377,7 +377,7 @@ describe('Dashboard', () => {
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
     m.fireError('new-uuid', 'boom');
 
-    await userEvent.click(await screen.findByRole('button', { name: 'pin' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Pin' }));
 
     expect(m.api.setWidgetPinned).toHaveBeenCalledWith('new-uuid', true);
   });
@@ -451,7 +451,7 @@ describe('Dashboard', () => {
     const { container } = render(<Dashboard />);
     await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(1));
 
-    await userEvent.click(screen.getByRole('button', { name: 'edit with chat' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Edit with chat' }));
     expect(await screen.findByRole('heading', { name: /edit widget/i })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/widget message/i), 'make it blue');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));

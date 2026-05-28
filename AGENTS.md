@@ -38,3 +38,9 @@ After the tag is pushed, close the milestone for that release so it stops accept
 ```powershell
 gh api repos/:owner/:repo/milestones/<number> --method PATCH -f state=closed
 ```
+
+## Design language
+
+- Sentence case for all user-facing text — headings, navigation, buttons, labels, placeholders, status. Acronyms (API, URL, HTTP, NSIS) keep their canonical case.
+- Status text uses the single ellipsis character `…` (not three dots `...`) for in-progress states (e.g. "Building widget…", "Searching the official docs…"), and ends with `.` for terminal/empty states (e.g. "No widgets yet.", "Up to date.").
+- `aria-label` values match the casing of their visible label. For purely descriptive `aria-label`s with no visible text, use sentence case.

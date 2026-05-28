@@ -114,9 +114,9 @@ describe('Tile', () => {
         onRetry={() => {}}
       />
     );
-    await userEvent.click(screen.getByRole('button', { name: 'pin' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Pin' }));
     await userEvent.click(screen.getByRole('button', { name: /refresh/i }));
-    await userEvent.click(screen.getByRole('button', { name: 'edit with chat' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Edit with chat' }));
     const deleteBtn = screen.getByRole('button', { name: /delete/i });
     await userEvent.click(deleteBtn);
     await userEvent.click(deleteBtn);
@@ -171,7 +171,7 @@ describe('Tile', () => {
       />
     );
 
-    await userEvent.click(screen.getByRole('button', { name: 'pin' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Pin' }));
 
     expect(onTogglePinned).toHaveBeenCalled();
   });
@@ -368,7 +368,7 @@ describe('Tile', () => {
       />
     );
 
-    await userEvent.click(screen.getByRole('button', { name: 'unpin' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Unpin' }));
 
     expect(onTogglePinned).toHaveBeenCalled();
   });

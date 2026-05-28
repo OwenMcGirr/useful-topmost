@@ -436,7 +436,7 @@ describe('SettingsModal', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /^updates$/i }));
 
-    expect(screen.getByText('Update 2026.1.0-alpha.10 ready')).toBeInTheDocument();
+    expect(screen.getByText('Update 2026.1.0-alpha.10 ready.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /restart to update/i }));
 
     expect(onRestartUpdate).toHaveBeenCalledTimes(1);

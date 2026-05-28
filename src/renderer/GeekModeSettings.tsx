@@ -16,7 +16,7 @@ export default function GeekModeSettings() {
   if (enabled === null) {
     return (
       <section>
-        <h2 style={{ marginTop: 0, fontSize: 18 }}>Geek Mode</h2>
+        <h2 style={{ marginTop: 0, fontSize: 18 }}>Geek mode</h2>
         <p style={{ fontSize: 13, opacity: 0.7 }}>Loading…</p>
       </section>
     );
@@ -24,7 +24,7 @@ export default function GeekModeSettings() {
 
   return (
     <section>
-      <h2 style={{ marginTop: 0, fontSize: 18 }}>Geek Mode</h2>
+      <h2 style={{ marginTop: 0, fontSize: 18 }}>Geek mode</h2>
       <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, cursor: 'pointer' }}>
         <input
           type="checkbox"

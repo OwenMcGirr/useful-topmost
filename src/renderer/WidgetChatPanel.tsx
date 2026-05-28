@@ -353,7 +353,7 @@ export default function WidgetChatPanel({
               style={confirmingDelete ? { ...BTN, color: '#f85149', borderColor: '#f85149' } : BTN}
               onClick={() => void handleDelete()}
             >
-              {confirmingDelete ? 'click to confirm' : 'Delete widget'}
+              {confirmingDelete ? 'Click to confirm' : 'Delete widget'}
             </button>
           )}
           <button style={BTN} onClick={onClose}>Close</button>
@@ -369,7 +369,7 @@ export default function WidgetChatPanel({
             style={{ width: '100%', height: '100%', border: 0 }}
           />
         ) : (
-          <div>{building ? 'Building preview...' : 'Preview will appear here'}</div>
+          <div>{building ? 'Building preview…' : 'Preview will appear here'}</div>
         )}
       </div>
 
@@ -401,7 +401,7 @@ export default function WidgetChatPanel({
         <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 12, color: '#8b949e' }}>
           <span>Refresh{refreshDirty || mode === 'create' ? '' : ' (default)'}</span>
           <select
-            aria-label="refresh cadence"
+            aria-label="Refresh cadence"
             value={refreshTtlMs}
             onChange={(e) => handleRefreshChange(Number(e.target.value))}
             style={{
@@ -427,8 +427,8 @@ export default function WidgetChatPanel({
           </span>
           {providers.length > 0 && (
             <div style={{ display: 'flex', gap: 4 }}>
-              <button style={{ ...BTN, fontSize: 11, padding: '3px 8px' }} onClick={selectAll}>all</button>
-              <button style={{ ...BTN, fontSize: 11, padding: '3px 8px' }} onClick={selectNone}>none</button>
+              <button style={{ ...BTN, fontSize: 11, padding: '3px 8px' }} onClick={selectAll}>All</button>
+              <button style={{ ...BTN, fontSize: 11, padding: '3px 8px' }} onClick={selectNone}>None</button>
             </div>
           )}
         </div>
@@ -444,7 +444,7 @@ export default function WidgetChatPanel({
                   type="checkbox"
                   checked={selectedIds.has(p.id)}
                   onChange={() => toggleProvider(p.id)}
-                  aria-label={`allow ${p.name}`}
+                  aria-label={`Allow ${p.name}`}
                 />
                 <span>{p.name}</span>
               </label>
@@ -458,7 +458,7 @@ export default function WidgetChatPanel({
           aria-label="Widget message"
           style={TEXTAREA}
           value={value}
-          placeholder="Ask for a widget or describe the next change..."
+          placeholder="Ask for a widget or describe the next change…"
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && e.ctrlKey) {

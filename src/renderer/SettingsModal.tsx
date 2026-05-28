@@ -111,7 +111,7 @@ export default function SettingsModal({
               aria-current={section === 'providers' ? 'page' : undefined}
               onClick={() => setSection('providers')}
             >
-              API Providers
+              API providers
             </button>
             <button
               style={sidebarButton(section === 'widgets')}
@@ -125,7 +125,7 @@ export default function SettingsModal({
               aria-current={section === 'geek' ? 'page' : undefined}
               onClick={() => setSection('geek')}
             >
-              Geek Mode
+              Geek mode
             </button>
             <button
               style={sidebarButton(section === 'updates')}
