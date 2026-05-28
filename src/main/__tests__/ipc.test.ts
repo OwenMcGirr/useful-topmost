@@ -312,6 +312,153 @@ describe('ipc', () => {
     expect((await store.getMeta(uuid)).selectedProviderIds).toEqual(['p1']);
   });
 
+  it('app:fetch records a fetch-log entry for the calling widget; app:fetchLog:get returns them newest-first…wait, raw order', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => new Response('hi', { status: 200 })) as any;
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    try {
+      const uuid = await store.create('p');
+      await fs.writeFile(path.join(store.dir(uuid), 'index.html'), '<html></html>');
+      const senderUrl = pathToFileURL(path.join(store.dir(uuid), 'index.html')).href;
+      const event = { senderFrame: { url: senderUrl } } as any;
+
+      await ipc.invokeWithEvent('app:fetch', event, 'https://example.com/a');
+      await ipc.invokeWithEvent('app:fetch', event, 'https://example.com/b', { method: 'POST' });
+
+      const log = await ipc.invoke('app:fetchLog:get', uuid);
+      expect(log).toHaveLength(2);
+      expect(log[0]).toMatchObject({ method: 'GET', url: 'https://example.com/a', status: 200, responseBytes: 2 });
+      expect(log[1]).toMatchObject({ method: 'POST', url: 'https://example.com/b', status: 200 });
+      expect(typeof log[0].durationMs).toBe('number');
+      expect(typeof log[0].at).toBe('string');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('app:fetch records the response body prefix as errorBody on non-2xx', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => new Response('{"error":"unauthorized"}', { status: 401 })) as any;
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    try {
+      const uuid = await store.create('p');
+      await fs.writeFile(path.join(store.dir(uuid), 'index.html'), '<html></html>');
+      const senderUrl = pathToFileURL(path.join(store.dir(uuid), 'index.html')).href;
+      const event = { senderFrame: { url: senderUrl } } as any;
+
+      await ipc.invokeWithEvent('app:fetch', event, 'https://example.com/forbidden');
+
+      const log = await ipc.invoke('app:fetchLog:get', uuid);
+      expect(log).toHaveLength(1);
+      expect(log[0].status).toBe(401);
+      expect(log[0].errorBody).toBe('{"error":"unauthorized"}');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('app:fetchLog caps at 20 entries (oldest evicted)', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => new Response('x', { status: 200 })) as any;
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    try {
+      const uuid = await store.create('p');
+      await fs.writeFile(path.join(store.dir(uuid), 'index.html'), '<html></html>');
+      const senderUrl = pathToFileURL(path.join(store.dir(uuid), 'index.html')).href;
+      const event = { senderFrame: { url: senderUrl } } as any;
+
+      for (let i = 0; i < 25; i += 1) {
+        await ipc.invokeWithEvent('app:fetch', event, `https://example.com/${i}`);
+      }
+
+      const log = await ipc.invoke('app:fetchLog:get', uuid);
+      expect(log).toHaveLength(20);
+      // The first 5 were dropped; remaining starts at index 5 (URL/5).
+      expect(log[0].url).toBe('https://example.com/5');
+      expect(log[19].url).toBe('https://example.com/24');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('app:fetchLog:get returns [] for unknown uuid and non-widget senders write nothing', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => new Response('x', { status: 200 })) as any;
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    try {
+      expect(await ipc.invoke('app:fetchLog:get', 'never-seen')).toEqual([]);
+      const nonWidgetEvent = { senderFrame: { url: 'http://localhost/' } } as any;
+      await ipc.invokeWithEvent('app:fetch', nonWidgetEvent, 'https://example.com/');
+      expect(await ipc.invoke('app:fetchLog:get', 'never-seen')).toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('widget:delete clears the fetch log for that widget', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => new Response('x', { status: 200 })) as any;
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    try {
+      const uuid = await store.create('p');
+      await fs.writeFile(path.join(store.dir(uuid), 'index.html'), '<html></html>');
+      const senderUrl = pathToFileURL(path.join(store.dir(uuid), 'index.html')).href;
+      const event = { senderFrame: { url: senderUrl } } as any;
+      await ipc.invokeWithEvent('app:fetch', event, 'https://example.com/');
+      expect(await ipc.invoke('app:fetchLog:get', uuid)).toHaveLength(1);
+
+      await ipc.invoke('widget:delete', uuid);
+      expect(await ipc.invoke('app:fetchLog:get', uuid)).toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('app:fetch passes the widget\'s selectedProviderIds through to appFetch (no auth when excluded)', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);

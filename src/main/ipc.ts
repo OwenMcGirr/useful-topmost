@@ -178,6 +178,27 @@ export function registerIpc(
 ): void {
   const inflight = new Map<string, AbortController>();
 
+  // Per-widget in-memory ring buffer of recent appFetch calls. Surfaced by the
+  // geek-mode (i) popover to tell the user what actually went over the wire,
+  // not what Codex thought it tried.
+  interface FetchLogEntry {
+    at: string;
+    method: string;
+    url: string;
+    status: number;
+    durationMs: number;
+    responseBytes: number;
+    errorBody?: string;
+  }
+  const FETCH_LOG_CAP = 20;
+  const fetchLog = new Map<string, FetchLogEntry[]>();
+  const recordFetchEntry = (uuid: string, entry: FetchLogEntry): void => {
+    const list = fetchLog.get(uuid) ?? [];
+    list.push(entry);
+    if (list.length > FETCH_LOG_CAP) list.splice(0, list.length - FETCH_LOG_CAP);
+    fetchLog.set(uuid, list);
+  };
+
   const trackRun = (uuid: string): AbortController => {
     const controller = new AbortController();
     inflight.set(uuid, controller);
@@ -355,6 +376,7 @@ export function registerIpc(
 
   ipcMain.handle('widget:delete', async (_event, uuid: string) => {
     await widgets.delete(uuid);
+    fetchLog.delete(uuid);
     return { ok: true };
   });
 
@@ -514,9 +536,10 @@ export function registerIpc(
 
   ipcMain.handle('app:fetch', async (event, url: string, init?: RequestInit) => {
     const cwd = widgetCwdFromSenderUrl(event.senderFrame?.url ?? '', widgets.widgetsRoot());
+    let uuid: string | undefined;
     let selectedProviderIds: string[] | undefined;
     if (cwd) {
-      const uuid = path.basename(cwd);
+      uuid = path.basename(cwd);
       try {
         const meta = await widgets.getMeta(uuid);
         selectedProviderIds = meta.selectedProviderIds;
@@ -525,7 +548,30 @@ export function registerIpc(
         // don't silently break appFetch.
       }
     }
-    return appFetch(secrets, url, init, selectedProviderIds);
+
+    const method = (init && typeof (init as any).method === 'string' ? (init as any).method : 'GET').toUpperCase();
+    const start = Date.now();
+    const envelope = await appFetch(secrets, url, init, selectedProviderIds);
+    if (uuid) {
+      const errorBody = envelope.status !== 0 && envelope.status >= 400
+        ? envelope.body.slice(0, 80)
+        : undefined;
+      recordFetchEntry(uuid, {
+        at: new Date().toISOString(),
+        method,
+        url,
+        status: envelope.status,
+        durationMs: Date.now() - start,
+        responseBytes: envelope.body.length,
+        ...(errorBody ? { errorBody } : {})
+      });
+    }
+    return envelope;
+  });
+
+  ipcMain.handle('app:fetchLog:get', async (_event, uuid: unknown) => {
+    if (typeof uuid !== 'string' || !uuid) return [];
+    return fetchLog.get(uuid) ?? [];
   });
 
   ipcMain.handle('app:exec', async (event, command: string, args: string[] = []) => {

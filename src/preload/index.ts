@@ -34,6 +34,16 @@ export interface WidgetChatMessage {
 interface SaveResult { ok: boolean; error?: string }
 interface ChatResult { ok: boolean; error?: string }
 
+export interface WidgetFetchLogEntry {
+  at: string;
+  method: string;
+  url: string;
+  status: number;
+  durationMs: number;
+  responseBytes: number;
+  errorBody?: string;
+}
+
 export type LookupProviderResult =
   | {
       ok: true;
@@ -71,6 +81,8 @@ const api = {
     ipcRenderer.invoke('widget:setRefreshTtl', uuid, ttlMs) as Promise<{ ok: true } | { ok: false; error: string }>,
   listWidgets: () => ipcRenderer.invoke('widget:list') as Promise<Widget[]>,
   getWidgetMeta: (uuid: string) => ipcRenderer.invoke('widget:getMeta', uuid) as Promise<{ prompt: string; created_at: string }>,
+  getWidgetFetchLog: (uuid: string) =>
+    ipcRenderer.invoke('app:fetchLog:get', uuid) as Promise<WidgetFetchLogEntry[]>,
   htmlUrl: (uuid: string) => ipcRenderer.invoke('widget:htmlUrl', uuid) as Promise<string>,
   codexAvailable: () => ipcRenderer.invoke('app:codexAvailable') as Promise<boolean>,
   codexStatus: () => ipcRenderer.invoke('app:codexStatus') as Promise<CodexStatus>,

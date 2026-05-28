@@ -67,6 +67,7 @@ function mockApi(opts: { onboardingDismissed?: boolean } = {}) {
     setWidgetProviders: vi.fn(async () => ({ ok: true })),
     setWidgetRefreshTtl: vi.fn(async () => ({ ok: true })),
     getWidgetMeta: vi.fn(async () => ({ prompt: 'p', created_at: '' })),
+    getWidgetFetchLog: vi.fn(async () => []),
     htmlUrl: vi.fn(async (u: string) => `file:///${u}/index.html`),
     codexAvailable: vi.fn(async () => true),
     codexStatus: vi.fn(async () => ({ installed: true, authenticated: true })),
