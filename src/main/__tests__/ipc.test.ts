@@ -156,6 +156,80 @@ describe('ipc', () => {
     expect((await ipc.invoke('prefs:get')).geekMode).toBe(true);
   });
 
+  it('widget:setRefreshTtl accepts a finite non-negative number; clears with null; rejects negatives and NaN', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+    const uuid = await store.create('p');
+
+    expect(await ipc.invoke('widget:setRefreshTtl', uuid, 3_600_000)).toEqual({ ok: true });
+    expect((await store.getMeta(uuid)).refreshTtlMs).toBe(3_600_000);
+
+    expect(await ipc.invoke('widget:setRefreshTtl', uuid, null)).toEqual({ ok: true });
+    expect((await store.getMeta(uuid)).refreshTtlMs).toBeUndefined();
+
+    const neg = await ipc.invoke('widget:setRefreshTtl', uuid, -100);
+    expect(neg.ok).toBe(false);
+    const nan = await ipc.invoke('widget:setRefreshTtl', uuid, Number.NaN);
+    expect(nan.ok).toBe(false);
+    const str = await ipc.invoke('widget:setRefreshTtl', uuid, '60000');
+    expect(str.ok).toBe(false);
+  });
+
+  it('widget:create with refreshTtlMs persists it and includes the cadence directive in the prompt', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+
+    let capturedPrompt = '';
+    const runCodex = vi.fn(async ({ cwd, prompt }: any) => {
+      capturedPrompt = prompt;
+      await fs.writeFile(path.join(cwd, 'index.html'), '<html></html>');
+      return { ok: true };
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const { uuid } = await ipc.invoke('widget:create', 'show weather', undefined, 86_400_000);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect((await store.getMeta(uuid)).refreshTtlMs).toBe(86_400_000);
+    expect(capturedPrompt).toContain('Refresh cadence: Daily (use ttlMs = 86400000');
+  });
+
+  it('widget:chatSend reads persisted refreshTtlMs and includes it in the prompt', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+
+    let capturedPrompt = '';
+    const runCodex = vi.fn(async ({ cwd, prompt }: any) => {
+      capturedPrompt = prompt;
+      await fs.writeFile(path.join(cwd, 'index.html'), '<html>v2</html>');
+      return { ok: true };
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const uuid = await store.create('p');
+    await fs.writeFile(path.join(store.dir(uuid), 'index.html'), '<html>v1</html>');
+    await store.setRefreshTtl(uuid, 300_000);
+
+    await ipc.invoke('widget:chatSend', uuid, 'tweak the title');
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(capturedPrompt).toContain('Refresh cadence: 5 min (use ttlMs = 300000');
+  });
+
   it('widget:setProviders persists known ids and rejects unknown ones', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);

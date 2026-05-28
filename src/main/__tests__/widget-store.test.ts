@@ -143,6 +143,25 @@ describe('widget-store', () => {
     expect((await store.list())[0].size).toBe('large');
   });
 
+  it('sets and clears refreshTtlMs, surfacing it in list()', async () => {
+    const root = await freshRoot();
+    const store = createWidgetStore(root);
+    const uuid = await store.create('p');
+
+    expect((await store.list())[0].refreshTtlMs).toBeUndefined();
+
+    await store.setRefreshTtl(uuid, 3_600_000);
+    expect((await store.getMeta(uuid)).refreshTtlMs).toBe(3_600_000);
+    expect((await store.list())[0].refreshTtlMs).toBe(3_600_000);
+
+    await store.setRefreshTtl(uuid, 0);
+    expect((await store.getMeta(uuid)).refreshTtlMs).toBe(0);
+
+    await store.setRefreshTtl(uuid, undefined);
+    expect((await store.getMeta(uuid)).refreshTtlMs).toBeUndefined();
+    expect((await store.list())[0].refreshTtlMs).toBeUndefined();
+  });
+
   it('sets and clears summary, surfacing it in list()', async () => {
     const root = await freshRoot();
     const store = createWidgetStore(root);

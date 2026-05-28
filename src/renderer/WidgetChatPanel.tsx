@@ -10,14 +10,32 @@ interface WidgetChatPanelProps {
     prompt: string;
     htmlUrl?: string;
     selectedProviderIds?: string[];
+    refreshTtlMs?: number;
   };
   initialMessage?: string;
   widgetPreloadUrl: string;
   onClose: () => void;
-  onCreated: (uuid: string, prompt: string, selectedProviderIds: string[] | undefined) => void;
+  onCreated: (uuid: string, prompt: string, selectedProviderIds: string[] | undefined, refreshTtlMs: number) => void;
   onSent: (uuid: string, prompt: string) => void;
   onDeleted: (uuid: string) => void;
 }
+
+interface RefreshPreset {
+  label: string;
+  ttlMs: number;
+}
+
+export const REFRESH_PRESETS: readonly RefreshPreset[] = [
+  { label: 'Live', ttlMs: 0 },
+  { label: '1 min', ttlMs: 60_000 },
+  { label: '5 min', ttlMs: 300_000 },
+  { label: '15 min', ttlMs: 900_000 },
+  { label: '1 hour', ttlMs: 3_600_000 },
+  { label: '6 hours', ttlMs: 21_600_000 },
+  { label: 'Daily', ttlMs: 86_400_000 }
+];
+
+const DEFAULT_REFRESH_TTL_MS = 3_600_000;
 
 const SCRIM: React.CSSProperties = {
   position: 'fixed',
@@ -150,6 +168,8 @@ export default function WidgetChatPanel({
   const [building, setBuilding] = useState(false);
   const [providers, setProviders] = useState<PublicProvider[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [refreshTtlMs, setRefreshTtlMs] = useState<number>(DEFAULT_REFRESH_TTL_MS);
+  const [refreshDirty, setRefreshDirty] = useState<boolean>(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
@@ -197,6 +217,19 @@ export default function WidgetChatPanel({
       }
     })();
   }, [open, widget?.uuid]);
+
+  useEffect(() => {
+    if (!open) return;
+    // Seed the refresh dropdown. Existing widgets without a stored value see
+    // the default but we don't persist that until the user actively changes it.
+    if (widget?.refreshTtlMs !== undefined) {
+      setRefreshTtlMs(widget.refreshTtlMs);
+      setRefreshDirty(true);
+    } else {
+      setRefreshTtlMs(DEFAULT_REFRESH_TTL_MS);
+      setRefreshDirty(false);
+    }
+  }, [open, widget?.uuid, widget?.refreshTtlMs]);
 
   useEffect(() => {
     if (!open || !currentUuid) return;
@@ -251,6 +284,14 @@ export default function WidgetChatPanel({
     });
   };
 
+  const handleRefreshChange = (next: number) => {
+    setRefreshTtlMs(next);
+    setRefreshDirty(true);
+    if (currentUuid) {
+      void window.api.setWidgetRefreshTtl(currentUuid, next);
+    }
+  };
+
   const handleDelete = async () => {
     if (!currentUuid) return;
     if (!confirmingDelete) {
@@ -280,9 +321,9 @@ export default function WidgetChatPanel({
     try {
       if (!currentUuid) {
         const ids = Array.from(selectedIds);
-        const { uuid } = await window.api.chatStartWidget(trimmed, ids);
+        const { uuid } = await window.api.chatStartWidget(trimmed, ids, refreshTtlMs);
         setCurrentUuid(uuid);
-        onCreated(uuid, trimmed, ids);
+        onCreated(uuid, trimmed, ids, refreshTtlMs);
       } else {
         const result = await window.api.chatSendWidget(currentUuid, trimmed);
         if (!result.ok) {
@@ -354,6 +395,29 @@ export default function WidgetChatPanel({
             </div>
           ))
         )}
+      </div>
+
+      <div style={PROVIDERS_BOX}>
+        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 12, color: '#8b949e' }}>
+          <span>Refresh{refreshDirty || mode === 'create' ? '' : ' (default)'}</span>
+          <select
+            aria-label="refresh cadence"
+            value={refreshTtlMs}
+            onChange={(e) => handleRefreshChange(Number(e.target.value))}
+            style={{
+              background: '#0d1117',
+              color: '#e6edf3',
+              border: '1px solid #30363d',
+              borderRadius: 6,
+              padding: '4px 8px',
+              fontSize: 12
+            }}
+          >
+            {REFRESH_PRESETS.map((p) => (
+              <option key={p.ttlMs} value={p.ttlMs}>{p.label}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div style={PROVIDERS_BOX} aria-label="Provider selection">

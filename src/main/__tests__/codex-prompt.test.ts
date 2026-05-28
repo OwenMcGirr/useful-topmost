@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CODEX_SYSTEM_PROMPT, buildChatPrompt, buildPrompt } from '../codex-prompt';
+import { CODEX_SYSTEM_PROMPT, REFRESH_PRESETS, buildChatPrompt, buildPrompt, labelForTtl } from '../codex-prompt';
 
 describe('codex-prompt', () => {
   it('exports a non-empty system prompt that mentions the output contract', () => {
@@ -28,6 +28,40 @@ describe('codex-prompt', () => {
     expect(CODEX_SYSTEM_PROMPT).toContain('summary.json');
     expect(CODEX_SYSTEM_PROMPT).toContain('"sources"');
     expect(CODEX_SYSTEM_PROMPT).toContain('Do NOT put URLs in sources');
+  });
+
+  it('REFRESH_PRESETS exposes the seven cadence options in order', () => {
+    expect(REFRESH_PRESETS.map((p) => p.label)).toEqual([
+      'Live', '1 min', '5 min', '15 min', '1 hour', '6 hours', 'Daily'
+    ]);
+    expect(REFRESH_PRESETS.map((p) => p.ttlMs)).toEqual([
+      0, 60_000, 300_000, 900_000, 3_600_000, 21_600_000, 86_400_000
+    ]);
+    expect(labelForTtl(3_600_000)).toBe('1 hour');
+    expect(labelForTtl(0)).toBe('Live');
+  });
+
+  it('buildPrompt with refreshTtlMs adds the cadence directive; without it the line is absent', () => {
+    const withTtl = buildPrompt('show weather', [], 3_600_000);
+    expect(withTtl).toContain('Refresh cadence: 1 hour (use ttlMs = 3600000 in your window.cache.get calls)');
+    expect(withTtl).toContain('Honor this exact value.');
+
+    const without = buildPrompt('show weather', []);
+    expect(without).not.toContain('Refresh cadence:');
+    expect(without).not.toContain('Honor this exact value.');
+  });
+
+  it('buildChatPrompt with refreshTtlMs adds the cadence directive', () => {
+    const withTtl = buildChatPrompt({
+      messages: [{ id: 'm1', role: 'user', text: 'tweak', created_at: '' }],
+      refreshTtlMs: 86_400_000
+    });
+    expect(withTtl).toContain('Refresh cadence: Daily (use ttlMs = 86400000');
+
+    const without = buildChatPrompt({
+      messages: [{ id: 'm1', role: 'user', text: 'tweak', created_at: '' }]
+    });
+    expect(without).not.toContain('Refresh cadence:');
   });
 
   it('instructs Codex to use window.cache.get for cadenced fetches', () => {

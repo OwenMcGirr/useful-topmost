@@ -175,17 +175,20 @@ export function registerIpc(
     if (inflight.get(uuid) === controller) inflight.delete(uuid);
   };
 
-  ipcMain.handle('widget:create', async (_event, prompt: string, selectedProviderIds?: string[]) => {
+  ipcMain.handle('widget:create', async (_event, prompt: string, selectedProviderIds?: string[], refreshTtlMs?: number) => {
     const uuid = await widgets.create(prompt);
     if (Array.isArray(selectedProviderIds)) {
       await widgets.setProviders(uuid, selectedProviderIds);
+    }
+    if (typeof refreshTtlMs === 'number' && Number.isFinite(refreshTtlMs) && refreshTtlMs >= 0) {
+      await widgets.setRefreshTtl(uuid, refreshTtlMs);
     }
     const controller = trackRun(uuid);
     void (async () => {
       const sender = getSender();
       const providers = filterProviders(await secrets.list(), selectedProviderIds);
       const result = await runCodex({
-        prompt: buildPrompt(prompt, providers),
+        prompt: buildPrompt(prompt, providers, refreshTtlMs),
         cwd: widgets.dir(uuid),
         logPath: widgets.logPath(uuid),
         signal: controller.signal
@@ -202,13 +205,16 @@ export function registerIpc(
     return { uuid };
   });
 
-  ipcMain.handle('widget:chatStart', async (_event, message: string, selectedProviderIds?: string[]) => {
+  ipcMain.handle('widget:chatStart', async (_event, message: string, selectedProviderIds?: string[], refreshTtlMs?: number) => {
     const trimmed = typeof message === 'string' ? message.trim() : '';
     if (!trimmed) throw new Error('message is required');
 
     const uuid = await widgets.create(trimmed);
     if (Array.isArray(selectedProviderIds)) {
       await widgets.setProviders(uuid, selectedProviderIds);
+    }
+    if (typeof refreshTtlMs === 'number' && Number.isFinite(refreshTtlMs) && refreshTtlMs >= 0) {
+      await widgets.setRefreshTtl(uuid, refreshTtlMs);
     }
     await widgets.appendChatMessage(uuid, chatMessage('user', trimmed));
     const status = chatMessage('status', 'Building...', 'building');
@@ -220,7 +226,7 @@ export function registerIpc(
       const meta = await widgets.getMeta(uuid);
       const providers = filterProviders(await secrets.list(), meta.selectedProviderIds);
       const result = await runCodex({
-        prompt: buildChatPrompt({ messages: meta.chat ?? [], providers }),
+        prompt: buildChatPrompt({ messages: meta.chat ?? [], providers, refreshTtlMs: meta.refreshTtlMs }),
         cwd: widgets.dir(uuid),
         logPath: widgets.logPath(uuid),
         signal: controller.signal
@@ -275,7 +281,7 @@ export function registerIpc(
         const providers = filterProviders(await secrets.list(), meta.selectedProviderIds);
         const currentHtml = await widgets.readWidgetHtml(uuid);
         const result = await runCodex({
-          prompt: buildChatPrompt({ messages: meta.chat ?? [], currentHtml, providers }),
+          prompt: buildChatPrompt({ messages: meta.chat ?? [], currentHtml, providers, refreshTtlMs: meta.refreshTtlMs }),
           cwd: stagingDir,
           logPath: path.join(stagingDir, 'codex.log'),
           signal: controller.signal
@@ -349,6 +355,18 @@ export function registerIpc(
       return { ok: false as const, error: 'size must be one of: small, wide, large' };
     }
     await widgets.setSize(uuid, size);
+    return { ok: true as const };
+  });
+
+  ipcMain.handle('widget:setRefreshTtl', async (_event, uuid: string, ttlMs: unknown) => {
+    if (ttlMs === null || ttlMs === undefined) {
+      await widgets.setRefreshTtl(uuid, undefined);
+      return { ok: true as const };
+    }
+    if (typeof ttlMs !== 'number' || !Number.isFinite(ttlMs) || ttlMs < 0) {
+      return { ok: false as const, error: 'ttlMs must be a non-negative finite number or null' };
+    }
+    await widgets.setRefreshTtl(uuid, ttlMs);
     return { ok: true as const };
   });
 
