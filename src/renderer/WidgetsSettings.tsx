@@ -66,7 +66,7 @@ export default function WidgetsSettings({ onEdit, onDelete }: Props) {
                       textOverflow: 'ellipsis'
                     }}
                   >
-                    {w.prompt || '(empty prompt)'}
+                    {w.summary?.name?.trim() || w.prompt || '(unnamed)'}
                   </div>
                   <div style={{ fontSize: 12, opacity: 0.7 }}>
                     {formatDate(w.created_at)}

@@ -6,6 +6,8 @@ export type WidgetSize = 'small' | 'wide' | 'large';
 
 export interface WidgetSummary {
   sources: string[];
+  /** Short human-readable label Codex chose for the widget itself. */
+  name?: string;
 }
 
 export interface WidgetMeta {

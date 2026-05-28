@@ -73,7 +73,7 @@ describe('ipc', () => {
     expect(sender.sent).toContainEqual({ channel: 'widget:error', payload: { uuid, error: 'boom' } });
   });
 
-  it('widget:create persists summary.json sidecar to meta.summary on success', async () => {
+  it('widget:create persists summary.json sidecar to meta.summary on success (with name)', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);
     const secrets = createSecretsStore(root);
@@ -81,7 +81,27 @@ describe('ipc', () => {
     const sender = fakeSender();
     const runCodex = vi.fn(async ({ cwd }: any) => {
       await fs.writeFile(path.join(cwd, 'index.html'), '<html></html>');
-      await fs.writeFile(path.join(cwd, 'summary.json'), JSON.stringify({ sources: ['Open-Meteo'] }));
+      await fs.writeFile(path.join(cwd, 'summary.json'), JSON.stringify({ name: 'Local Weather', sources: ['Open-Meteo'] }));
+      return { ok: true };
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const { uuid } = await ipc.invoke('widget:create', 'show weather');
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect((await store.getMeta(uuid)).summary).toEqual({ name: 'Local Weather', sources: ['Open-Meteo'] });
+  });
+
+  it('widget:create accepts legacy summary.json without name; whitespace-only name is dropped', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn(async ({ cwd }: any) => {
+      await fs.writeFile(path.join(cwd, 'index.html'), '<html></html>');
+      await fs.writeFile(path.join(cwd, 'summary.json'), JSON.stringify({ name: '   ', sources: ['Open-Meteo'] }));
       return { ok: true };
     });
 

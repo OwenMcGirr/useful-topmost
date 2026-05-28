@@ -23,11 +23,14 @@ describe('codex-prompt', () => {
     expect(CODEX_SYSTEM_PROMPT).toContain('Do not include your validation notes in the widget UI');
   });
 
-  it('instructs Codex to write a summary.json sources sidecar', () => {
-    expect(CODEX_SYSTEM_PROMPT).toContain('Sources record:');
+  it('instructs Codex to write a summary.json sidecar with name + sources', () => {
+    expect(CODEX_SYSTEM_PROMPT).toContain('Summary record:');
     expect(CODEX_SYSTEM_PROMPT).toContain('summary.json');
+    expect(CODEX_SYSTEM_PROMPT).toContain('"name"');
     expect(CODEX_SYSTEM_PROMPT).toContain('"sources"');
     expect(CODEX_SYSTEM_PROMPT).toContain('Do NOT put URLs in sources');
+    // Old "Sources record" wording is gone (rolled into "Summary record").
+    expect(CODEX_SYSTEM_PROMPT).not.toContain('Sources record:');
   });
 
   it('REFRESH_PRESETS exposes the seven cadence options in order', () => {
