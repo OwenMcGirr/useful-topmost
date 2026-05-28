@@ -308,6 +308,22 @@ describe('SettingsModal', () => {
     expect(screen.getAllByRole('button', { name: /^edit$/i })).toHaveLength(2);
   });
 
+  it('Widgets section: prefers summary.name over prompt; falls back when missing', async () => {
+    const { api } = mockApi([]);
+    (api as any).listWidgets = vi.fn(async () => [
+      { uuid: 'a', prompt: 'make it blue', created_at: '', summary: { sources: [], name: 'Local Weather' } },
+      { uuid: 'b', prompt: 'top hn stories', created_at: '' }
+    ]);
+    (window as any).api = api;
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /^widgets$/i }));
+
+    expect(await screen.findByText('Local Weather')).toBeInTheDocument();
+    expect(screen.queryByText('make it blue')).toBeNull();
+    expect(screen.getByText('top hn stories')).toBeInTheDocument();
+  });
+
   it('Widgets section: clicking Edit invokes onEditWidget with the row uuid', async () => {
     const { api } = mockApi([]);
     (api as any).listWidgets = vi.fn(async () => [

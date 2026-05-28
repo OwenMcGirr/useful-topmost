@@ -141,14 +141,16 @@ function chatMessage(role: 'user' | 'status', text: string, status?: 'building' 
   };
 }
 
-async function readWidgetSummary(dir: string): Promise<{ sources: string[] } | undefined> {
+async function readWidgetSummary(dir: string): Promise<{ sources: string[]; name?: string } | undefined> {
   try {
     const raw = await fs.readFile(path.join(dir, WIDGET_SUMMARY_OUTPUT_FILE), 'utf8');
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return undefined;
     const sources = (parsed as any).sources;
     if (!Array.isArray(sources) || !sources.every((s: any) => typeof s === 'string')) return undefined;
-    return { sources };
+    const rawName = (parsed as any).name;
+    const name = typeof rawName === 'string' && rawName.trim().length > 0 ? rawName.trim() : undefined;
+    return name === undefined ? { sources } : { sources, name };
   } catch {
     return undefined;
   }
