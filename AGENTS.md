@@ -32,3 +32,9 @@ git push origin v2026.1.0-alpha.1
 ```
 
 Pushing the tag triggers `.github/workflows/release.yml`, which builds Windows and Linux artifacts and publishes a GitHub Release with generated notes.
+
+After the tag is pushed, close the milestone for that release so it stops accepting issues. Look up the milestone number from `gh api repos/:owner/:repo/milestones`, then:
+
+```powershell
+gh api repos/:owner/:repo/milestones/<number> --method PATCH -f state=closed
+```
