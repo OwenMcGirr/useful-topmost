@@ -86,6 +86,7 @@ function mockApi(opts: { onboardingDismissed?: boolean } = {}) {
         if (idx >= 0) errorHandlers.splice(idx, 1);
       };
     }),
+    onWidgetPlan: vi.fn(() => () => {}),
     secrets: {
       list: vi.fn(async () => []),
       save: vi.fn(async () => ({ ok: true })),

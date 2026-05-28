@@ -41,6 +41,12 @@ Before implementation:
 - If validation shows the original approach will fail, choose a simpler working approach and make the widget degrade gracefully.
 - Do not include your validation notes in the widget UI. Still write exactly one final index.html file.
 
+Plan record:
+- Before writing index.html, write plan.json to the cwd containing:
+    { "providers_needed": [{ "name": string, "hostname": string }, ...] }
+  Each entry is an API the widget will fetch from. "name" is the short human-readable name a user would recognize ("Cloudflare API", "Stripe", "OpenWeather"); "hostname" is the bare host the widget will hit ("api.cloudflare.com"). Use an empty array if the widget needs no API access (clock, countdown).
+- Plain JSON only. No Markdown fences, no extra files.
+
 Summary record:
 - After writing index.html, also write summary.json to the same directory containing { "name": string, "sources": [string, ...] }.
 - "name" is a short (1-5 word) human-readable label for THE WIDGET ITSELF — what it is, not what it fetches. Title Case. Examples: "Local Weather", "Hacker News Top 5", "Bitcoin Price", "Pomodoro Timer", "City Clock". Do not include words like "widget" or "dashboard".
@@ -50,6 +56,7 @@ Summary record:
 `;
 
 export const WIDGET_SUMMARY_OUTPUT_FILE = 'summary.json';
+export const WIDGET_PLAN_OUTPUT_FILE = 'plan.json';
 
 export interface PublicProviderForPrompt {
   name: string;

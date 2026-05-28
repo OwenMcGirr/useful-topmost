@@ -23,6 +23,13 @@ describe('codex-prompt', () => {
     expect(CODEX_SYSTEM_PROMPT).toContain('Do not include your validation notes in the widget UI');
   });
 
+  it('instructs Codex to write a plan.json sidecar with providers_needed', () => {
+    expect(CODEX_SYSTEM_PROMPT).toContain('Plan record:');
+    expect(CODEX_SYSTEM_PROMPT).toContain('plan.json');
+    expect(CODEX_SYSTEM_PROMPT).toContain('providers_needed');
+    expect(CODEX_SYSTEM_PROMPT).toContain('Before writing index.html');
+  });
+
   it('instructs Codex to write a summary.json sidecar with name + sources', () => {
     expect(CODEX_SYSTEM_PROMPT).toContain('Summary record:');
     expect(CODEX_SYSTEM_PROMPT).toContain('summary.json');

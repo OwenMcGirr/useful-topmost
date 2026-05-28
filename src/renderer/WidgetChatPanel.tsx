@@ -19,6 +19,7 @@ interface WidgetChatPanelProps {
   onCreated: (uuid: string, prompt: string, selectedProviderIds: string[] | undefined, refreshTtlMs: number) => void;
   onSent: (uuid: string, prompt: string) => void;
   onDeleted: (uuid: string) => void;
+  onAddProviderRequest?: (name: string) => void;
 }
 
 interface RefreshPreset {
@@ -159,7 +160,8 @@ export default function WidgetChatPanel({
   onClose,
   onCreated,
   onSent,
-  onDeleted
+  onDeleted,
+  onAddProviderRequest
 }: WidgetChatPanelProps) {
   const [value, setValue] = useState(initialMessage);
   const [messages, setMessages] = useState<WidgetChatMessage[]>([]);
@@ -170,6 +172,7 @@ export default function WidgetChatPanel({
   const [providers, setProviders] = useState<PublicProvider[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [expandedFailures, setExpandedFailures] = useState<Set<string>>(new Set());
+  const [planSuggestions, setPlanSuggestions] = useState<Array<{ name: string; hostname: string }>>([]);
   const [refreshTtlMs, setRefreshTtlMs] = useState<number>(DEFAULT_REFRESH_TTL_MS);
   const [refreshDirty, setRefreshDirty] = useState<boolean>(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -200,6 +203,7 @@ export default function WidgetChatPanel({
     setPreviewUrl(cacheBust(widget?.htmlUrl));
     setMessages([]);
     setBuilding(false);
+    setPlanSuggestions([]);
     if (widget?.uuid) {
       void loadChat(widget.uuid);
     }
@@ -247,9 +251,25 @@ export default function WidgetChatPanel({
       await loadChat(uuid);
       setBuilding(false);
     });
+    const offPlan = window.api.onWidgetPlan(async (uuid, providers) => {
+      if (uuid !== currentUuid) return;
+      const saved = await window.api.secrets.list();
+      const savedHosts = new Set(saved.flatMap((p) => p.hostnames));
+      const missing = providers.filter((entry) => entry.hostname && !savedHosts.has(entry.hostname));
+      // Deduplicate by hostname to avoid stacking identical banners.
+      const seen = new Set<string>();
+      const unique: typeof missing = [];
+      for (const m of missing) {
+        if (seen.has(m.hostname)) continue;
+        seen.add(m.hostname);
+        unique.push(m);
+      }
+      setPlanSuggestions(unique);
+    });
     return () => {
       offReady();
       offError();
+      offPlan();
     };
   }, [open, currentUuid]);
 
@@ -522,6 +542,46 @@ export default function WidgetChatPanel({
           </div>
         )}
       </div>
+
+      {planSuggestions.length > 0 && (
+        <div style={{ padding: '8px 16px', borderTop: '1px solid #21262d', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {planSuggestions.map((entry) => (
+            <div
+              key={entry.hostname}
+              role="status"
+              style={{
+                padding: '8px 10px',
+                borderLeft: '3px solid #d29922',
+                borderRadius: 6,
+                background: 'rgba(210, 153, 34, 0.08)',
+                color: '#e6edf3',
+                fontSize: 12,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8
+              }}
+            >
+              <span>This widget will use {entry.name}.</span>
+              <button
+                style={{
+                  background: 'transparent',
+                  color: '#e6edf3',
+                  border: '1px solid #30363d',
+                  borderRadius: 4,
+                  padding: '3px 8px',
+                  fontSize: 11,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+                onClick={() => onAddProviderRequest?.(entry.name)}
+              >
+                Add provider
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div style={COMPOSER}>
         <textarea

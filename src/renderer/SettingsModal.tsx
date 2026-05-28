@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { UpdateState } from '../preload';
 import ApiProvidersSettings from './ApiProvidersSettings';
 import GeekModeSettings from './GeekModeSettings';
@@ -16,6 +16,8 @@ interface Props {
   onRestartUpdate?: () => void;
   onEditWidget?: (uuid: string) => void;
   onDeleteWidget?: (uuid: string) => void;
+  addProviderSeedQuery?: string | null;
+  onAddProviderConsumed?: () => void;
 }
 
 const OVERLAY: React.CSSProperties = {
@@ -91,9 +93,15 @@ export default function SettingsModal({
   onCheckUpdates = () => {},
   onRestartUpdate = () => {},
   onEditWidget = () => {},
-  onDeleteWidget = () => {}
+  onDeleteWidget = () => {},
+  addProviderSeedQuery = null,
+  onAddProviderConsumed = () => {}
 }: Props) {
   const [section, setSection] = useState<Section>('providers');
+
+  useEffect(() => {
+    if (open && addProviderSeedQuery) setSection('providers');
+  }, [open, addProviderSeedQuery]);
 
   if (!open) return null;
 
@@ -136,7 +144,12 @@ export default function SettingsModal({
             </button>
           </nav>
           <div style={CONTENT}>
-            {section === 'providers' && <ApiProvidersSettings />}
+            {section === 'providers' && (
+              <ApiProvidersSettings
+                seedLookupQuery={addProviderSeedQuery}
+                onSeedConsumed={onAddProviderConsumed}
+              />
+            )}
             {section === 'widgets' && <WidgetsSettings onEdit={onEditWidget} onDelete={onDeleteWidget} />}
             {section === 'geek' && <GeekModeSettings />}
             {section === 'updates' && (
