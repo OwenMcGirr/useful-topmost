@@ -141,7 +141,8 @@ export function buildProviderLookupPrompt(query: string): string {
     '  "name": "<short human-readable name>",',
     '  "hostnames": ["<host1>", "<host2>", ...],',
     '  "auth": { "type": "header", "name": "<HTTP header name>", "scheme": "none|bearer|basic|token" },',
-    '  "source": "<URL of the official documentation page you consulted>"',
+    '  "source": "<URL of the official documentation page you consulted>",',
+    '  "instructions": "<1-3 sentences telling the user where to sign up and where to find their key>"',
     '}',
     '',
     'Query-string authentication:',
@@ -150,7 +151,8 @@ export function buildProviderLookupPrompt(query: string): string {
     '  "name": "<short human-readable name>",',
     '  "hostnames": ["<host1>"],',
     '  "auth": { "type": "query", "param": "<query-string parameter name>" },',
-    '  "source": "<URL of the official documentation page you consulted>"',
+    '  "source": "<URL of the official documentation page you consulted>",',
+    '  "instructions": "<1-3 sentences telling the user where to sign up and where to find their key>"',
     '}',
     '',
     'On failure (no official docs found, ambiguous request, API does not exist):',
@@ -160,6 +162,7 @@ export function buildProviderLookupPrompt(query: string): string {
     '- hostnames must be bare hostnames (no scheme, no path, no trailing slash). For example: "api.stripe.com".',
     '- scheme is "bearer" / "basic" / "token" when the auth header value is prefixed with that word and a space (e.g. "Bearer sk_..."); "none" when the value is the raw key.',
     '- source must be a URL on the API vendor\'s own domain or their official documentation host.',
+    '- instructions is 1-3 plain-text sentences. Cover (a) where to sign up — a URL or named page on the vendor\'s site — and (b) where in their UI the API key lives once you\'re logged in (e.g. "Developers → API keys"). No Markdown, no surrounding quotes. Omit the field if the API genuinely needs no key.',
     '- Output JSON only. No commentary, no Markdown fences, no extra files.'
   ].join('\n');
 }
