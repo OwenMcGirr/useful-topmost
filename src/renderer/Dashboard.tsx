@@ -477,16 +477,16 @@ export default function Dashboard() {
       </div>
       {showShuffle && (
         <div style={PAGER_BAR}>
-          <span style={PAGER_COUNT} aria-label="visible widgets">
+          <span style={PAGER_COUNT} aria-label="Visible widgets">
             {visibleTiles.length} of {tiles.length}
           </span>
-          <button aria-label="previous page" title="Previous page" style={PAGER_BUTTON} onClick={() => stepPage(-1)}>‹</button>
-          <button aria-label="next page" title="Next page" style={PAGER_BUTTON} onClick={() => stepPage(1)}>›</button>
-          <button aria-label="shuffle widgets" title="Shuffle visible widgets" style={SHUFFLE_BUTTON} onClick={shuffleVisibleTiles}>shuffle</button>
+          <button aria-label="Previous page" title="Previous page" style={PAGER_BUTTON} onClick={() => stepPage(-1)}>‹</button>
+          <button aria-label="Next page" title="Next page" style={PAGER_BUTTON} onClick={() => stepPage(1)}>›</button>
+          <button aria-label="Shuffle widgets" title="Shuffle visible widgets" style={SHUFFLE_BUTTON} onClick={shuffleVisibleTiles}>Shuffle</button>
         </div>
       )}
-      <button aria-label="settings" title="Settings" style={GEAR_BUTTON} onClick={() => setSettingsOpen(true)}>⚙</button>
-      <button aria-label="new widget" title="New widget" style={PLUS_BUTTON} onClick={() => setChat({ open: true, mode: 'create' })}>+</button>
+      <button aria-label="Settings" title="Settings" style={GEAR_BUTTON} onClick={() => setSettingsOpen(true)}>⚙</button>
+      <button aria-label="New widget" title="New widget" style={PLUS_BUTTON} onClick={() => setChat({ open: true, mode: 'create' })}>+</button>
       <WidgetChatPanel
         open={chat.open}
         mode={chat.open ? chat.mode : 'create'}

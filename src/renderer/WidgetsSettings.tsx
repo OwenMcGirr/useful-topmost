@@ -79,7 +79,7 @@ export default function WidgetsSettings({ onEdit, onDelete }: Props) {
                     style={confirming ? { ...BTN_DANGER, borderColor: '#f85149' } : BTN_DANGER}
                     onClick={() => handleDelete(w.uuid)}
                   >
-                    {confirming ? 'click to confirm' : 'Delete'}
+                    {confirming ? 'Click to confirm' : 'Delete'}
                   </button>
                 </div>
               </div>

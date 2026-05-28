@@ -17,23 +17,23 @@ const PRIMARY_BTN: React.CSSProperties = {
 function updateStatusText(state: UpdateState): string {
   switch (state.status) {
     case 'checking':
-      return 'Checking';
+      return 'Checking…';
     case 'available':
-      return `Update ${state.version} available`;
+      return `Update ${state.version} available.`;
     case 'downloading':
       return typeof state.percent === 'number'
         ? `Downloading ${Math.round(state.percent)}%`
-        : 'Downloading';
+        : 'Downloading…';
     case 'downloaded':
-      return `Update ${state.version} ready`;
+      return `Update ${state.version} ready.`;
     case 'not-available':
-      return 'Up to date';
+      return 'Up to date.';
     case 'unsupported':
-      return 'Updates unavailable for this package';
+      return 'Updates unavailable for this package.';
     case 'error':
-      return 'Update check failed';
+      return 'Update check failed.';
     default:
-      return 'Idle';
+      return 'Idle.';
   }
 }
 

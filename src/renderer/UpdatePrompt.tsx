@@ -63,7 +63,7 @@ export default function UpdatePrompt({ state }: Props) {
     return (
       <div role="status" style={BANNER}>
         <div style={ROW}>
-          <div>Update {state.version} ready</div>
+          <div>Update {state.version} ready.</div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button style={PRIMARY} onClick={() => void window.api.updates.restart()}>Restart</button>
             <button style={BUTTON} onClick={() => setDismissedKey(promptKey)}>Later</button>
@@ -74,10 +74,10 @@ export default function UpdatePrompt({ state }: Props) {
   }
 
   if (state.status === 'downloading') {
-    const percent = typeof state.percent === 'number' ? ` ${Math.round(state.percent)}%` : '';
+    const tail = typeof state.percent === 'number' ? ` ${Math.round(state.percent)}%` : '…';
     return (
       <div role="status" style={BANNER}>
-        Downloading update{percent}
+        Downloading update{tail}
       </div>
     );
   }
@@ -85,7 +85,7 @@ export default function UpdatePrompt({ state }: Props) {
   return (
     <div role="status" style={BANNER}>
       <div style={ROW}>
-        <div>Update check failed</div>
+        <div>Update check failed.</div>
         <button style={BUTTON} onClick={() => setDismissedKey(promptKey)}>Dismiss</button>
       </div>
     </div>

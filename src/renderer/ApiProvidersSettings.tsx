@@ -223,7 +223,7 @@ export default function ApiProvidersSettings() {
 
   return (
     <section>
-      <h2 style={{ marginTop: 0, fontSize: 18 }}>API Providers</h2>
+      <h2 style={{ marginTop: 0, fontSize: 18 }}>API providers</h2>
 
       {draft ? (
         <div>
@@ -234,7 +234,7 @@ export default function ApiProvidersSettings() {
               </span>
               <div style={{ display: 'flex', gap: 8 }}>
                 <input
-                  aria-label="describe an api"
+                  aria-label="Describe an API"
                   style={INPUT}
                   value={lookupQuery}
                   placeholder='e.g. "Stripe", "GitHub REST", "AlphaVantage"'
@@ -267,7 +267,7 @@ export default function ApiProvidersSettings() {
               {lookupBusy && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#8b949e', fontSize: 12, marginTop: 6 }}>
                   <span className="spinner" aria-hidden />
-                  <span>searching the official docs… {lookupElapsed}s</span>
+                  <span>Searching the official docs… {lookupElapsed}s</span>
                 </div>
               )}
               {lookupError && <div style={{ color: '#f85149', fontSize: 12, marginTop: 6 }}>{lookupError}</div>}
