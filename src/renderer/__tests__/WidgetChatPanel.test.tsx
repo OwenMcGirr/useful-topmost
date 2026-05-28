@@ -287,6 +287,35 @@ describe('WidgetChatPanel', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('failed transcript message renders as a red-bordered alert with friendly heading; See details reveals the raw text', async () => {
+    const m = mockApi();
+    m.api.listWidgetChat = vi.fn(async () => [
+      { id: 'm1', role: 'user', text: 'make a clock', created_at: 't1' },
+      { id: 'm2', role: 'status', text: 'Failed: codex exited with code 1: rate limit exceeded', created_at: 't2', status: 'failed' }
+    ]) as any;
+    (window as any).api = m.api;
+    render(
+      <WidgetChatPanel
+        open={true}
+        mode="edit"
+        widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
+        widgetPreloadUrl=""
+        onClose={() => {}}
+        onCreated={() => {}}
+        onSent={() => {}}
+        onDeleted={() => {}}
+      />
+    );
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/Codex is rate-limited/);
+    expect(alert).toHaveTextContent(/Wait a minute/);
+    expect(screen.queryByText(/codex exited with code 1: rate limit exceeded/i)).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: /see details/i }));
+    expect(screen.getByText(/codex exited with code 1: rate limit exceeded/i)).toBeInTheDocument();
+  });
+
   it('refreshes preview after widget:ready', async () => {
     const m = mockApi();
     (window as any).api = m.api;

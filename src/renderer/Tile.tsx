@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { TileState } from './types';
 import type { WidgetSize } from '../preload';
+import { categorizeError } from './errors';
 
 interface Props {
   uuid: string;
@@ -84,6 +85,11 @@ export default function Tile(props: Props) {
   const popoverRef = useRef<HTMLDivElement>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [errorDetailsOpen, setErrorDetailsOpen] = useState(false);
+
+  useEffect(() => {
+    if (props.state.kind !== 'error') setErrorDetailsOpen(false);
+  }, [props.state.kind]);
 
   useEffect(() => {
     if (!confirmingDelete) return;
@@ -186,11 +192,42 @@ export default function Tile(props: Props) {
         />
       )}
 
-      {props.state.kind === 'error' && (
-        <div style={{ padding: 16, color: '#f85149', fontSize: 14, overflow: 'auto', height: '100%' }}>
-          {props.state.message}
-        </div>
-      )}
+      {props.state.kind === 'error' && (() => {
+        const friendly = categorizeError(props.state.message);
+        return (
+          <div
+            role="alert"
+            style={{ padding: 16, fontSize: 13, color: '#e6edf3', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}
+          >
+            <div style={{ color: '#f85149', fontSize: 14, fontWeight: 600 }}>{friendly.title}</div>
+            {friendly.advice && <div style={{ opacity: 0.85 }}>{friendly.advice}</div>}
+            <button
+              style={{ ...BTN, alignSelf: 'flex-start' }}
+              onClick={() => setErrorDetailsOpen((v) => !v)}
+              aria-expanded={errorDetailsOpen}
+            >
+              {errorDetailsOpen ? 'Hide details' : 'See details'}
+            </button>
+            {errorDetailsOpen && (
+              <pre
+                style={{
+                  margin: 0,
+                  padding: 8,
+                  background: '#0d1117',
+                  border: '1px solid #30363d',
+                  borderRadius: 4,
+                  fontSize: 12,
+                  whiteSpace: 'pre-wrap',
+                  maxHeight: 160,
+                  overflowY: 'auto'
+                }}
+              >
+                {props.state.message}
+              </pre>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

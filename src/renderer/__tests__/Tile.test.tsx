@@ -68,6 +68,30 @@ describe('Tile', () => {
     expect(wv!.getAttribute('src')).toBe('file:///path/index.html');
   });
 
+  it('error state shows a friendly title; See details reveals the raw message', async () => {
+    render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'error', message: 'codex exited with code 1: HTTP 401 Unauthorized' }}
+        htmlUrl=""
+        widgetPreloadUrl=""
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+      />
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(/Codex isn't signed in/);
+    expect(screen.getByRole('alert')).toHaveTextContent(/`codex login`/);
+    expect(screen.queryByText(/HTTP 401 Unauthorized/i)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: /see details/i }));
+    expect(screen.getByText(/HTTP 401 Unauthorized/i)).toBeInTheDocument();
+  });
+
   it('shows error message + Retry + Delete when state is error', async () => {
     const onRetry = vi.fn();
     const onDismiss = vi.fn();
@@ -85,7 +109,11 @@ describe('Tile', () => {
         onRetry={onRetry}
       />
     );
-    expect(screen.getByText(/codex exited/i)).toBeInTheDocument();
+    // Friendly title is shown by default; raw stderr is hidden behind a toggle.
+    expect(screen.getByText(/widget generation failed|codex exited without output|codex/i)).toBeInTheDocument();
+    expect(screen.queryByText(/codex exited with code 1/i)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: /see details/i }));
+    expect(screen.getByText(/codex exited with code 1/i)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /retry/i }));
     expect(onRetry).toHaveBeenCalled();
     const deleteBtn = screen.getByRole('button', { name: /delete/i });
