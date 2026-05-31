@@ -24,8 +24,12 @@ function mockApi(initial: any[] = []) {
       cancelLookup: vi.fn(async () => ({ ok: true }) as any)
     },
     prefs: {
-      get: vi.fn(async () => ({ geekMode: false })),
-      setGeekMode: vi.fn(async () => ({ ok: true }))
+      get: vi.fn(async () => ({ geekMode: false, lanServer: { enabled: false, port: 32177 } })),
+      setGeekMode: vi.fn(async () => ({ ok: true })),
+      setLanServer: vi.fn(async () => ({ ok: true }))
+    },
+    lan: {
+      getState: vi.fn(async () => ({ running: false, port: 32177, urls: [] }))
     }
   };
   return { api, state };

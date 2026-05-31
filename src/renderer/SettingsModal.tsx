@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import type { UpdateState } from '../preload';
 import ApiProvidersSettings from './ApiProvidersSettings';
 import GeekModeSettings from './GeekModeSettings';
+import LanSettings from './LanSettings';
 import UpdateSettings from './UpdateSettings';
 import WidgetsSettings from './WidgetsSettings';
 import { BTN } from './settingsStyles';
 
-type Section = 'providers' | 'widgets' | 'geek' | 'updates';
+type Section = 'providers' | 'widgets' | 'lan' | 'geek' | 'updates';
 
 interface Props {
   open: boolean;
@@ -136,6 +137,13 @@ export default function SettingsModal({
               Geek mode
             </button>
             <button
+              style={sidebarButton(section === 'lan')}
+              aria-current={section === 'lan' ? 'page' : undefined}
+              onClick={() => setSection('lan')}
+            >
+              Local network
+            </button>
+            <button
               style={sidebarButton(section === 'updates')}
               aria-current={section === 'updates' ? 'page' : undefined}
               onClick={() => setSection('updates')}
@@ -151,6 +159,7 @@ export default function SettingsModal({
               />
             )}
             {section === 'widgets' && <WidgetsSettings onEdit={onEditWidget} onDelete={onDeleteWidget} />}
+            {section === 'lan' && <LanSettings />}
             {section === 'geek' && <GeekModeSettings />}
             {section === 'updates' && (
               <UpdateSettings

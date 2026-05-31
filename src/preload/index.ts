@@ -4,6 +4,7 @@ import type { PublicProvider, Provider } from '../main/secrets-store';
 import type { OnboardingState } from '../main/onboarding-store';
 import type { UpdateState } from '../main/updater';
 import type { WidgetSize, WidgetSummary } from '../main/widget-store';
+import type { LanServerState } from '../main/lan-server';
 
 export interface CodexStatus {
   installed: boolean;
@@ -120,9 +121,14 @@ const api = {
     dismiss: () => ipcRenderer.invoke('onboarding:dismiss') as Promise<{ ok: true }>
   },
   prefs: {
-    get: () => ipcRenderer.invoke('prefs:get') as Promise<{ geekMode: boolean }>,
+    get: () => ipcRenderer.invoke('prefs:get') as Promise<{ geekMode: boolean; lanServer: { enabled: boolean; port: number } }>,
     setGeekMode: (value: boolean) =>
-      ipcRenderer.invoke('prefs:setGeekMode', value) as Promise<{ ok: true } | { ok: false; error: string }>
+      ipcRenderer.invoke('prefs:setGeekMode', value) as Promise<{ ok: true } | { ok: false; error: string }>,
+    setLanServer: (value: { enabled: boolean; port: number }) =>
+      ipcRenderer.invoke('prefs:setLanServer', value) as Promise<{ ok: true } | { ok: false; error: string }>
+  },
+  lan: {
+    getState: () => ipcRenderer.invoke('lan:getState') as Promise<LanServerState>
   },
   updates: {
     getState: () => ipcRenderer.invoke('update:getState') as Promise<UpdateState>,
