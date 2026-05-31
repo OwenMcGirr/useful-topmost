@@ -235,7 +235,7 @@ describe('ipc', () => {
     expect((await store.getMeta(uuid)).summary).toBeUndefined();
   });
 
-  it('prefs:get returns geekMode:false by default; prefs:setGeekMode persists', async () => {
+  it('prefs:get returns defaults; prefs:setGeekMode persists', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);
     const secrets = createSecretsStore(root);
@@ -245,15 +245,40 @@ describe('ipc', () => {
 
     registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
-    expect(await ipc.invoke('prefs:get')).toEqual({ geekMode: false });
+    expect(await ipc.invoke('prefs:get')).toEqual({ geekMode: false, lanServer: { enabled: false, port: 32177 } });
 
     const ok = await ipc.invoke('prefs:setGeekMode', true);
     expect(ok).toEqual({ ok: true });
-    expect(await ipc.invoke('prefs:get')).toEqual({ geekMode: true });
+    expect(await ipc.invoke('prefs:get')).toEqual({ geekMode: true, lanServer: { enabled: false, port: 32177 } });
 
     const bad = await ipc.invoke('prefs:setGeekMode', 'yes');
     expect(bad.ok).toBe(false);
     expect((await ipc.invoke('prefs:get')).geekMode).toBe(true);
+  });
+
+  it('prefs:setLanServer validates, persists, and applies the LAN controller', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+    const lan = {
+      getState: vi.fn(() => ({ running: true, port: 32178, urls: ['http://127.0.0.1:32178/'] })),
+      applyConfig: vi.fn(async () => ({ running: true, port: 32178, urls: ['http://127.0.0.1:32178/'] })),
+      stop: vi.fn()
+    };
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root), lan);
+
+    const ok = await ipc.invoke('prefs:setLanServer', { enabled: true, port: 32178 });
+    expect(ok).toEqual({ ok: true });
+    expect(lan.applyConfig).toHaveBeenCalledWith({ enabled: true, port: 32178 });
+    expect((await ipc.invoke('prefs:get')).lanServer).toEqual({ enabled: true, port: 32178 });
+    expect(await ipc.invoke('lan:getState')).toEqual({ running: true, port: 32178, urls: ['http://127.0.0.1:32178/'] });
+
+    const bad = await ipc.invoke('prefs:setLanServer', { enabled: true, port: 80 });
+    expect(bad.ok).toBe(false);
   });
 
   it('widget:setRefreshTtl accepts a finite non-negative number; clears with null; rejects negatives and NaN', async () => {

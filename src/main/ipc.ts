@@ -6,6 +6,7 @@ import type { WidgetStore } from './widget-store';
 import type { SecretsStore, Provider } from './secrets-store';
 import type { OnboardingStore } from './onboarding-store';
 import type { PrefsStore } from './prefs-store';
+import type { LanServerController } from './lan-server';
 import type { runCodex as RunCodexFn } from './codex-runner';
 import { PROVIDER_LOOKUP_OUTPUT_FILE, WIDGET_PLAN_OUTPUT_FILE, WIDGET_SUMMARY_OUTPUT_FILE, buildChatPrompt, buildPrompt, buildProviderLookupPrompt } from './codex-prompt';
 import { appFetch, filterProviders, injectAuth } from './proxy';
@@ -220,7 +221,8 @@ export function registerIpc(
   onboarding: OnboardingStore,
   runCodex: typeof RunCodexFn,
   getSender: GetSender,
-  prefs: PrefsStore
+  prefs: PrefsStore,
+  lan?: LanServerController
 ): void {
   const inflight = new Map<string, AbortController>();
 
@@ -690,4 +692,24 @@ export function registerIpc(
     await prefs.setGeekMode(value);
     return { ok: true as const };
   });
+
+  ipcMain.handle('prefs:setLanServer', async (_event, value: unknown) => {
+    if (!value || typeof value !== 'object') {
+      return { ok: false as const, error: 'value must be an object' };
+    }
+    const next = value as { enabled?: unknown; port?: unknown };
+    if (typeof next.enabled !== 'boolean') {
+      return { ok: false as const, error: 'enabled must be a boolean' };
+    }
+    if (!Number.isInteger(next.port) || (next.port as number) < 1024 || (next.port as number) > 65535) {
+      return { ok: false as const, error: 'port must be between 1024 and 65535' };
+    }
+    const lanServer = { enabled: next.enabled, port: next.port as number };
+    await prefs.setLanServer(lanServer);
+    if (lan) await lan.applyConfig(lanServer);
+    return { ok: true as const };
+  });
+
+  ipcMain.handle('lan:getState', async () =>
+    lan?.getState() ?? { running: false, port: 32177, urls: [] });
 }

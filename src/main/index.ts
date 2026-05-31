@@ -6,6 +6,7 @@ import { createWidgetStore } from './widget-store';
 import { createSecretsStore } from './secrets-store';
 import { createOnboardingStore } from './onboarding-store';
 import { createPrefsStore } from './prefs-store';
+import { createLanServerController } from './lan-server';
 import { runCodex } from './codex-runner';
 import { registerIpc } from './ipc';
 import { createUpdateController } from './updater';
@@ -33,6 +34,7 @@ function attachExternalLinkHandlers(contents: WebContents): void {
 
 let mainWindow: BrowserWindow | null = null;
 const APP_USER_MODEL_ID = 'com.owenmcgirr.useful-topmost';
+let stopLanServer: (() => Promise<void>) | null = null;
 
 function runCodexCommand(args: string[]): Promise<boolean> {
   return new Promise((resolve) => {
@@ -111,7 +113,10 @@ app.whenReady().then(async () => {
   const secrets = createSecretsStore(userData);
   const onboarding = createOnboardingStore(userData);
   const prefs = createPrefsStore(userData);
-  registerIpc(ipcMain, store, secrets, onboarding, runCodex, () => mainWindow!.webContents, prefs);
+  const lan = createLanServerController({ widgets: store, secrets });
+  stopLanServer = () => lan.stop();
+  registerIpc(ipcMain, store, secrets, onboarding, runCodex, () => mainWindow!.webContents, prefs, lan);
+  void prefs.get().then((p) => lan.applyConfig(p.lanServer));
 
   ipcMain.handle('app:codexStatus', () => checkCodexStatus());
   ipcMain.handle('app:codexAvailable', async () => {
@@ -130,6 +135,10 @@ app.whenReady().then(async () => {
   ipcMain.handle('update:restart', () => updates.quitAndInstall());
 
   setTimeout(() => void updates.checkNow(), 5000);
+});
+
+app.on('before-quit', () => {
+  if (stopLanServer) void stopLanServer();
 });
 
 app.on('window-all-closed', () => app.quit());
