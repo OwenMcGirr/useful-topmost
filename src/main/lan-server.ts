@@ -85,6 +85,11 @@ function updateTile(section, widget) {
   if (iframe) iframe.title = widgetTitle(widget);
 }
 
+function findTile(nextGrid, uuid) {
+  return Array.from(nextGrid.querySelectorAll('section[data-uuid]'))
+    .find((node) => node.dataset.uuid === uuid);
+}
+
 function render(widgets) {
   if (!root) return;
   if (!widgets.length) {
@@ -96,13 +101,15 @@ function render(widgets) {
   if (!nextGrid) return;
 
   const seen = new Set();
+  let cursor = nextGrid.firstElementChild;
   for (const widget of widgets) {
     seen.add(widget.uuid);
-    let section = Array.from(nextGrid.querySelectorAll('section[data-uuid]'))
-      .find((node) => node.dataset.uuid === widget.uuid);
+    let section = findTile(nextGrid, widget.uuid);
     if (!section) section = createTile(widget);
     else updateTile(section, widget);
-    nextGrid.appendChild(section);
+
+    if (section !== cursor) nextGrid.insertBefore(section, cursor);
+    cursor = section.nextElementSibling;
   }
 
   for (const section of Array.from(nextGrid.querySelectorAll('section[data-uuid]'))) {

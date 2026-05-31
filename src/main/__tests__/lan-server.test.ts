@@ -184,8 +184,10 @@ describe('lan-server', () => {
     try {
       const client = await readText(`http://127.0.0.1:${state.port}/lan-client.js`);
       expect(client.body).toContain('function updateTile');
-      expect(client.body).toContain('nextGrid.appendChild(section)');
+      expect(client.body).toContain('if (section !== cursor) nextGrid.insertBefore(section, cursor)');
+      expect(client.body).toContain('cursor = section.nextElementSibling');
       expect(client.body).not.toContain("root.innerHTML = '<main class=\"grid\">'");
+      expect(client.body).not.toContain('nextGrid.appendChild(section)');
       expect(client.body).not.toContain('<iframe title="');
     } finally {
       await controller.stop();
