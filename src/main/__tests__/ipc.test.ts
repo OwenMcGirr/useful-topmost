@@ -168,7 +168,7 @@ describe('ipc', () => {
     registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const { uuid } = await ipc.invoke('widget:create', 'show weather');
-    await new Promise((r) => setTimeout(r, 20));
+    await waitForSent(sender, { channel: 'widget:ready', payload: { uuid } });
 
     expect((await store.getMeta(uuid)).summary).toEqual({ name: 'Local Weather', sources: ['Open-Meteo'] });
   });
@@ -188,7 +188,7 @@ describe('ipc', () => {
     registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const { uuid } = await ipc.invoke('widget:create', 'show weather');
-    await new Promise((r) => setTimeout(r, 20));
+    await waitForSent(sender, { channel: 'widget:ready', payload: { uuid } });
 
     expect((await store.getMeta(uuid)).summary).toEqual({ sources: ['Open-Meteo'] });
   });
@@ -724,7 +724,7 @@ describe('ipc', () => {
     registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
     const { uuid } = await ipc.invoke('widget:chatStart', 'make a timer');
-    await new Promise((r) => setTimeout(r, 10));
+    await waitForSent(sender, { channel: 'widget:ready', payload: { uuid } });
 
     const meta = await store.getMeta(uuid);
     expect(meta.chat?.map((m) => m.text)).toEqual(['make a timer', 'Updated']);

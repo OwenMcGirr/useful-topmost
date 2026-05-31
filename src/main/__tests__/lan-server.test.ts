@@ -176,6 +176,22 @@ describe('lan-server', () => {
     }
   });
 
+  it('serves a LAN client that preserves existing widget iframes while polling', async () => {
+    const root = await freshRoot();
+    const { widgets } = await createWidget(root);
+    const controller = createLanServerController({ widgets, secrets: createSecretsStore(root) });
+    const state = await controller.applyConfig({ enabled: true, port: 0 });
+    try {
+      const client = await readText(`http://127.0.0.1:${state.port}/lan-client.js`);
+      expect(client.body).toContain('function updateTile');
+      expect(client.body).toContain('nextGrid.appendChild(section)');
+      expect(client.body).not.toContain("root.innerHTML = '<main class=\"grid\">'");
+      expect(client.body).not.toContain('<iframe title="');
+    } finally {
+      await controller.stop();
+    }
+  });
+
   it('reports EADDRINUSE when the configured port is already taken', async () => {
     const root = await freshRoot();
     const { widgets } = await createWidget(root);
