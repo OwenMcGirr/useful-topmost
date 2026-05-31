@@ -33,6 +33,7 @@ interface Deps {
 
 const CLIENT_JS = `
 const root = document.getElementById('root');
+let grid = null;
 
 function sizeClass(size) {
   if (size === 'wide') return 'tile tile-wide';
@@ -40,25 +41,73 @@ function sizeClass(size) {
   return 'tile';
 }
 
+function widgetTitle(widget) {
+  return String(widget.prompt || 'Widget');
+}
+
+function ensureGrid() {
+  if (!root) return null;
+  if (grid && grid.isConnected) return grid;
+  root.innerHTML = '';
+  grid = document.createElement('main');
+  grid.className = 'grid';
+  root.appendChild(grid);
+  return grid;
+}
+
+function showMessage(message) {
+  if (!root) return;
+  grid = null;
+  const current = root.querySelector('.empty');
+  if (current && current.textContent === message) return;
+  root.innerHTML = '';
+  const main = document.createElement('main');
+  main.className = 'empty';
+  main.textContent = message;
+  root.appendChild(main);
+}
+
+function createTile(widget) {
+  const section = document.createElement('section');
+  section.dataset.uuid = widget.uuid;
+
+  const iframe = document.createElement('iframe');
+  iframe.src = '/widgets/' + encodeURIComponent(widget.uuid) + '/';
+  section.appendChild(iframe);
+
+  updateTile(section, widget);
+  return section;
+}
+
+function updateTile(section, widget) {
+  section.className = sizeClass(widget.size);
+  const iframe = section.querySelector('iframe');
+  if (iframe) iframe.title = widgetTitle(widget);
+}
+
 function render(widgets) {
   if (!root) return;
   if (!widgets.length) {
-    root.innerHTML = '<main class="empty">No widgets yet.</main>';
+    showMessage('No widgets yet.');
     return;
   }
-  root.innerHTML = '<main class="grid">' + widgets.map((widget) => {
-    const uuid = encodeURIComponent(widget.uuid);
-    const title = String(widget.prompt || 'Widget').replace(/[&<>"']/g, (ch) => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;'
-    }[ch]));
-    return '<section class="' + sizeClass(widget.size) + '">' +
-      '<iframe title="' + title + '" src="/widgets/' + uuid + '/"></iframe>' +
-      '</section>';
-  }).join('') + '</main>';
+
+  const nextGrid = ensureGrid();
+  if (!nextGrid) return;
+
+  const seen = new Set();
+  for (const widget of widgets) {
+    seen.add(widget.uuid);
+    let section = Array.from(nextGrid.querySelectorAll('section[data-uuid]'))
+      .find((node) => node.dataset.uuid === widget.uuid);
+    if (!section) section = createTile(widget);
+    else updateTile(section, widget);
+    nextGrid.appendChild(section);
+  }
+
+  for (const section of Array.from(nextGrid.querySelectorAll('section[data-uuid]'))) {
+    if (!seen.has(section.dataset.uuid)) section.remove();
+  }
 }
 
 async function load() {
@@ -67,7 +116,7 @@ async function load() {
     if (!response.ok) throw new Error('Failed to load widgets.');
     render(await response.json());
   } catch {
-    if (root) root.innerHTML = '<main class="empty">Could not load widgets.</main>';
+    showMessage('Could not load widgets.');
   }
 }
 
