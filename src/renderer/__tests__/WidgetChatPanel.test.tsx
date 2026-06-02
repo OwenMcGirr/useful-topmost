@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import WidgetChatPanel from '../WidgetChatPanel';
 
@@ -35,6 +35,10 @@ function mockApi(opts: { providers?: Array<{ id: string; name: string; hostnames
 
 beforeEach(() => {
   (window as any).api = undefined;
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('WidgetChatPanel', () => {
@@ -106,6 +110,61 @@ describe('WidgetChatPanel', () => {
     await waitFor(() => expect(api.chatStartWidget).toHaveBeenCalledWith('show weather', [], 3_600_000));
     expect(onCreated).toHaveBeenCalledWith('new-widget', 'show weather', [], 3_600_000);
     expect(screen.getByText(/building preview/i)).toBeInTheDocument();
+  });
+
+  it('shows a close countdown after creating a widget and closes when it expires', async () => {
+    vi.useFakeTimers();
+    const { api } = mockApi();
+    const onClose = vi.fn();
+    (window as any).api = api;
+    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={onClose} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/widget message/i), { target: { value: 'show weather' } });
+      fireEvent.click(screen.getByRole('button', { name: /send/i }));
+    });
+
+    expect(screen.getByText(/closing in 3s/i)).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(screen.getByText(/closing in 2s/i)).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(screen.getByText(/closing in 1s/i)).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels the close countdown when the user keeps interacting', async () => {
+    vi.useFakeTimers();
+    const { api } = mockApi();
+    const onClose = vi.fn();
+    (window as any).api = api;
+    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={onClose} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+
+    const textarea = screen.getByLabelText(/widget message/i);
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: 'show weather' } });
+      fireEvent.click(screen.getByRole('button', { name: /send/i }));
+    });
+
+    expect(screen.getByText(/closing in 3s/i)).toBeInTheDocument();
+    fireEvent.pointerDown(textarea);
+
+    expect(screen.getByText(/ctrl\+enter to send/i)).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(4000);
+    });
+
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('edit send calls chatSendWidget', async () => {

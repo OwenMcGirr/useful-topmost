@@ -177,6 +177,7 @@ export default function WidgetChatPanel({
   const [refreshDirty, setRefreshDirty] = useState<boolean>(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [autoCloseSeconds, setAutoCloseSeconds] = useState<number | null>(null);
 
   useEffect(() => {
     if (!confirmingDelete) return;
@@ -186,6 +187,10 @@ export default function WidgetChatPanel({
 
   useEffect(() => {
     if (!open) setConfirmingDelete(false);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) setAutoCloseSeconds(null);
   }, [open]);
 
   const title = mode === 'create' && !currentUuid ? 'New widget' : 'Edit widget';
@@ -205,6 +210,7 @@ export default function WidgetChatPanel({
     setMessages([]);
     setBuilding(false);
     setPlanSuggestions([]);
+    setAutoCloseSeconds(null);
     if (widget?.uuid) {
       void loadChat(widget.uuid);
     }
@@ -281,6 +287,22 @@ export default function WidgetChatPanel({
 
   const displayMessages = useMemo(() => messages, [messages]);
 
+  useEffect(() => {
+    if (autoCloseSeconds === null) return;
+    if (autoCloseSeconds <= 0) {
+      onClose();
+      return;
+    }
+    const timer = window.setTimeout(() => setAutoCloseSeconds((current) => (
+      current === null ? null : current - 1
+    )), 1000);
+    return () => window.clearTimeout(timer);
+  }, [autoCloseSeconds, onClose]);
+
+  const cancelAutoClose = () => {
+    setAutoCloseSeconds(null);
+  };
+
   const persistSelection = (next: Set<string>) => {
     if (!currentUuid) return;
     void window.api.setWidgetProviders(currentUuid, Array.from(next));
@@ -352,6 +374,7 @@ export default function WidgetChatPanel({
         const { uuid } = await window.api.chatStartWidget(trimmed, ids, refreshTtlMs);
         setCurrentUuid(uuid);
         onCreated(uuid, trimmed, ids, refreshTtlMs);
+        setAutoCloseSeconds(3);
       } else {
         const result = await window.api.chatSendWidget(currentUuid, trimmed);
         if (!result.ok) {
@@ -372,7 +395,12 @@ export default function WidgetChatPanel({
   return (
     <>
       <div data-chat-scrim style={SCRIM} aria-hidden />
-      <aside aria-label="Widget chat" style={PANEL}>
+      <aside
+        aria-label="Widget chat"
+        style={PANEL}
+        onPointerDown={cancelAutoClose}
+        onKeyDown={cancelAutoClose}
+      >
       <div style={HEADER}>
         <h2 style={{ margin: 0, fontSize: 18 }}>{title}</h2>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -606,7 +634,9 @@ export default function WidgetChatPanel({
           }}
         />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-          <span style={{ fontSize: 11, color: '#8b949e' }}>Ctrl+Enter to send</span>
+          <span style={{ fontSize: 11, color: '#8b949e' }}>
+            {autoCloseSeconds === null ? 'Ctrl+Enter to send' : `Closing in ${autoCloseSeconds}s`}
+          </span>
           <button style={canSend ? BTN_PRIMARY : { ...BTN_PRIMARY, opacity: 0.5, cursor: 'not-allowed' }} disabled={!canSend} onClick={() => void send()}>
             Send
           </button>
