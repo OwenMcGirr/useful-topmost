@@ -7,7 +7,7 @@ import { createWidgetStore } from '../widget-store';
 import { createSecretsStore } from '../secrets-store';
 import { createOnboardingStore } from '../onboarding-store';
 import { createPrefsStore } from '../prefs-store';
-import { parseProviderLookupResponse, registerIpc } from '../ipc';
+import { completionSummaryText, parseProviderLookupResponse, registerIpc } from '../ipc';
 
 function fakeIpcMain() {
   const handlers = new Map<string, (...args: any[]) => any>();
@@ -35,6 +35,47 @@ async function waitForSent(sender: ReturnType<typeof fakeSender>, expected: any)
 }
 
 describe('ipc', () => {
+  it('formats completion summary text with one source', () => {
+    expect(completionSummaryText({ name: 'Local Weather', sources: ['Open-Meteo'] })).toBe(
+      'Local Weather is ready. Data from Open-Meteo.'
+    );
+  });
+
+  it('formats completion summary text with two sources', () => {
+    expect(completionSummaryText({ name: 'Market Snapshot', sources: ['Yahoo Finance', 'Alpha Vantage'] })).toBe(
+      'Market Snapshot is ready. Data from Yahoo Finance and Alpha Vantage.'
+    );
+  });
+
+  it('formats completion summary text with an Oxford comma for three or more sources', () => {
+    expect(completionSummaryText({ name: 'Market Snapshot', sources: ['A', 'B', 'C', 'D'] })).toBe(
+      'Market Snapshot is ready. Data from A, B, and C.'
+    );
+  });
+
+  it('formats completion summary text for self-contained widgets', () => {
+    expect(completionSummaryText({ name: 'Pomodoro Timer', sources: [] })).toBe(
+      'Pomodoro Timer is ready. Self-contained; no external data sources.'
+    );
+  });
+
+  it('formats completion summary text with sources but no name', () => {
+    expect(completionSummaryText({ sources: ['Open-Meteo'] })).toBe('Widget updated. Data from Open-Meteo.');
+  });
+
+  it('formats completion summary text when summary is missing', () => {
+    expect(completionSummaryText(undefined)).toBe('Widget updated. No data sources were recorded.');
+  });
+
+  it('trims blank source names and treats all-blank source lists as empty', () => {
+    expect(completionSummaryText({ name: 'Timer', sources: ['  ', '\t'] })).toBe(
+      'Timer is ready. Self-contained; no external data sources.'
+    );
+    expect(completionSummaryText({ name: 'Weather', sources: [' Open-Meteo ', '', ' RainViewer '] })).toBe(
+      'Weather is ready. Data from Open-Meteo and RainViewer.'
+    );
+  });
+
   it('widget:create creates a widget, runs codex, and sends widget:ready on success', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);
@@ -823,7 +864,7 @@ describe('ipc', () => {
     expect(result.ok).toBe(false);
   });
 
-  it('widget:chatStart creates a widget, records chat, runs codex, and sends ready', async () => {
+  it('widget:chatStart creates a widget, records summary chat, runs codex, and sends ready', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);
     const secrets = createSecretsStore(root);
@@ -831,8 +872,31 @@ describe('ipc', () => {
     const sender = fakeSender();
     const runCodex = vi.fn(async ({ cwd, prompt }: any) => {
       expect(prompt).toContain('Conversation history:');
-      expect(prompt).toContain('make a timer');
+      expect(prompt).toContain('show weather');
+      await fs.writeFile(path.join(cwd, 'index.html'), '<html>weather</html>');
+      await fs.writeFile(path.join(cwd, 'summary.json'), JSON.stringify({ name: 'Local Weather', sources: ['Open-Meteo'] }));
+      return { ok: true, path: path.join(cwd, 'index.html') };
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const { uuid } = await ipc.invoke('widget:chatStart', 'show weather');
+    await waitForSent(sender, { channel: 'widget:ready', payload: { uuid } });
+
+    const meta = await store.getMeta(uuid);
+    expect(meta.chat?.map((m) => m.text)).toEqual(['show weather', 'Local Weather is ready. Data from Open-Meteo.']);
+    expect(sender.sent).toContainEqual({ channel: 'widget:ready', payload: { uuid } });
+  });
+
+  it('widget:chatStart records self-contained summary chat when sources are empty', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn(async ({ cwd }: any) => {
       await fs.writeFile(path.join(cwd, 'index.html'), '<html>timer</html>');
+      await fs.writeFile(path.join(cwd, 'summary.json'), JSON.stringify({ name: 'Pomodoro Timer', sources: [] }));
       return { ok: true, path: path.join(cwd, 'index.html') };
     });
 
@@ -842,8 +906,10 @@ describe('ipc', () => {
     await waitForSent(sender, { channel: 'widget:ready', payload: { uuid } });
 
     const meta = await store.getMeta(uuid);
-    expect(meta.chat?.map((m) => m.text)).toEqual(['make a timer', 'Updated']);
-    expect(sender.sent).toContainEqual({ channel: 'widget:ready', payload: { uuid } });
+    expect(meta.chat?.map((m) => m.text)).toEqual([
+      'make a timer',
+      'Pomodoro Timer is ready. Self-contained; no external data sources.'
+    ]);
   });
 
   it('widget:chatStart records failure and sends widget:error', async () => {
@@ -877,6 +943,10 @@ describe('ipc', () => {
       expect(prompt).toContain('<html>old</html>');
       expect(prompt).toContain('make it blue');
       await fs.writeFile(path.join(cwd, 'index.html'), '<html>new</html>');
+      await fs.writeFile(
+        path.join(cwd, 'summary.json'),
+        JSON.stringify({ name: 'Weather Radar', sources: ['Open-Meteo', 'RainViewer'] })
+      );
       return { ok: true, path: path.join(cwd, 'index.html') };
     });
 
@@ -886,8 +956,36 @@ describe('ipc', () => {
     await waitForSent(sender, { channel: 'widget:ready', payload: { uuid } });
 
     expect(await store.readWidgetHtml(uuid)).toBe('<html>new</html>');
-    expect((await store.getMeta(uuid)).prompt).toBe('make it blue');
+    const meta = await store.getMeta(uuid);
+    expect(meta.prompt).toBe('make it blue');
+    expect(meta.chat?.map((m) => m.text)).toEqual([
+      'make a clock',
+      'make it blue',
+      'Weather Radar is ready. Data from Open-Meteo and RainViewer.'
+    ]);
     expect(sender.sent).toContainEqual({ channel: 'widget:ready', payload: { uuid } });
+  });
+
+  it('widget:chatSend uses fallback summary chat when summary is missing', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const uuid = await store.create('make a clock');
+    await store.replaceWidgetHtml(uuid, '<html>old</html>');
+    const runCodex = vi.fn(async ({ cwd }: any) => {
+      await fs.writeFile(path.join(cwd, 'index.html'), '<html>new</html>');
+      return { ok: true, path: path.join(cwd, 'index.html') };
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    expect(await ipc.invoke('widget:chatSend', uuid, 'make it blue')).toEqual({ ok: true });
+    await waitForSent(sender, { channel: 'widget:ready', payload: { uuid } });
+
+    const chat = await ipc.invoke('widget:chatList', uuid);
+    expect(chat.map((m: any) => m.text)).toEqual(['make it blue', 'Widget updated. No data sources were recorded.']);
   });
 
   it('widget:chatSend preserves live HTML on failure and returns persisted chat', async () => {
