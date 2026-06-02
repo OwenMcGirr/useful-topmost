@@ -38,13 +38,25 @@ export interface DashboardFillLayout {
   overflow: boolean;
 }
 
+export function calculateDashboardMaxColumns(width: number): number {
+  const safeWidth = Math.max(1, width);
+  const availableWidth = Math.max(TILE_MIN_WIDTH, safeWidth - DASHBOARD_PADDING * 2);
+  return Math.max(1, Math.floor((availableWidth + TILE_GAP) / (TILE_MIN_WIDTH + TILE_GAP)));
+}
+
+export function calculateDashboardMaxRows(height: number): number {
+  const safeHeight = Math.max(1, height);
+  const availableHeight = Math.max(TILE_MIN_HEIGHT, safeHeight - DASHBOARD_PADDING * 2);
+  return Math.max(1, Math.floor((availableHeight + TILE_GAP) / (TILE_MIN_HEIGHT + TILE_GAP)));
+}
+
 export function calculateDashboardLayout(width: number, height: number): DashboardLayout {
   const safeWidth = Math.max(1, width);
   const safeHeight = Math.max(1, height);
   const availableWidth = Math.max(TILE_MIN_WIDTH, safeWidth - DASHBOARD_PADDING * 2);
   const availableHeight = Math.max(TILE_MIN_HEIGHT, safeHeight - DASHBOARD_PADDING * 2);
-  const columns = Math.max(1, Math.floor((availableWidth + TILE_GAP) / (TILE_MIN_WIDTH + TILE_GAP)));
-  const rows = Math.max(1, Math.floor((availableHeight + TILE_GAP) / (TILE_MIN_HEIGHT + TILE_GAP)));
+  const columns = calculateDashboardMaxColumns(width);
+  const rows = calculateDashboardMaxRows(height);
   const tileWidth = Math.floor((availableWidth - TILE_GAP * (columns - 1)) / columns);
   const tileHeight = Math.floor((availableHeight - TILE_GAP * (rows - 1)) / rows);
 
@@ -182,16 +194,18 @@ function totalWeight<T extends { size?: TileSize }>(tiles: T[]): number {
 
 function weightedPages<T extends { uuid: string; size?: TileSize }>(
   tiles: T[],
-  capacityWeight: number
+  capacityWeight: number,
+  itemCapacity = capacityWeight
 ): T[][] {
   const capacity = Math.max(1, capacityWeight);
+  const maxItems = Math.max(1, itemCapacity);
   const pages: T[][] = [];
   let page: T[] = [];
   let pageWeight = 0;
 
   tiles.forEach((tile) => {
     const weight = tileWeight(tile.size);
-    if (page.length > 0 && pageWeight + weight > capacity) {
+    if (page.length > 0 && (pageWeight + weight > capacity || page.length + 1 > maxItems)) {
       pages.push(page);
       page = [];
       pageWeight = 0;
@@ -213,16 +227,17 @@ export function getDashboardPageCountByWeight<T extends { uuid: string; pinned?:
   capacityWeight: number
 ): number {
   const capacity = Math.max(1, capacityWeight);
-  if (tiles.length === 0 || totalWeight(tiles) <= capacity) return 1;
+  const maxItems = capacity;
+  if (tiles.length === 0 || (totalWeight(tiles) <= capacity && tiles.length <= maxItems)) return 1;
 
   const pinned = tiles.filter((tile) => tile.pinned === true);
   const pinnedWeight = totalWeight(pinned);
-  if (pinnedWeight >= capacity) {
-    return Math.max(1, weightedPages(pinned, capacity).length);
+  if (pinnedWeight >= capacity || pinned.length >= maxItems) {
+    return Math.max(1, weightedPages(pinned, capacity, maxItems).length);
   }
 
   const unpinned = tiles.filter((tile) => tile.pinned !== true);
-  return Math.max(1, weightedPages(unpinned, capacity - pinnedWeight).length);
+  return Math.max(1, weightedPages(unpinned, capacity - pinnedWeight, maxItems - pinned.length).length);
 }
 
 export function pickDashboardPageByWeight<T extends { uuid: string; pinned?: boolean; size?: TileSize }>(
@@ -231,19 +246,20 @@ export function pickDashboardPageByWeight<T extends { uuid: string; pinned?: boo
   pageIndex: number
 ): T[] {
   const capacity = Math.max(1, capacityWeight);
+  const maxItems = capacity;
   if (capacity === 0 || tiles.length === 0) return [];
-  if (totalWeight(tiles) <= capacity) return [...tiles];
+  if (totalWeight(tiles) <= capacity && tiles.length <= maxItems) return [...tiles];
 
   const pinned = tiles.filter((tile) => tile.pinned === true);
   const pinnedWeight = totalWeight(pinned);
-  if (pinnedWeight >= capacity) {
-    const pages = weightedPages(pinned, capacity);
+  if (pinnedWeight >= capacity || pinned.length >= maxItems) {
+    const pages = weightedPages(pinned, capacity, maxItems);
     const normalizedPage = ((pageIndex % pages.length) + pages.length) % pages.length;
     return pages[normalizedPage] ?? [];
   }
 
   const unpinned = tiles.filter((tile) => tile.pinned !== true);
-  const pages = weightedPages(unpinned, capacity - pinnedWeight);
+  const pages = weightedPages(unpinned, capacity - pinnedWeight, maxItems - pinned.length);
   const normalizedPage = ((pageIndex % pages.length) + pages.length) % pages.length;
   return [...pinned, ...(pages[normalizedPage] ?? [])];
 }
@@ -254,8 +270,9 @@ export function pickVisibleDashboardTilesByWeight<T extends { uuid: string; pinn
   previous: T[] = []
 ): T[] {
   const capacity = Math.max(1, capacityWeight);
+  const maxItems = capacity;
   if (tiles.length === 0) return [];
-  if (totalWeight(tiles) <= capacity) return [...tiles];
+  if (totalWeight(tiles) <= capacity && tiles.length <= maxItems) return [...tiles];
 
   const pageCount = getDashboardPageCountByWeight(tiles, capacity);
   let candidate = pickDashboardPageByWeight(tiles, capacity, 0);
@@ -334,9 +351,12 @@ function scoreRows(
     const rowHeight = drawableHeight * (row.weight / total);
     const itemGapTotal = TILE_GAP * Math.max(0, row.items.length - 1);
     const drawableWidth = Math.max(1, availableWidth - itemGapTotal);
+    const extraWidth = Math.max(0, drawableWidth - TILE_MIN_WIDTH * row.items.length);
 
     row.items.forEach((item) => {
-      const itemWidth = drawableWidth * (tileWeight(item.size) / row.weight);
+      const itemWidth = row.items.length === 1 && availableWidth < TILE_MIN_WIDTH
+        ? availableWidth
+        : TILE_MIN_WIDTH + extraWidth * (tileWeight(item.size) / row.weight);
       const aspect = itemWidth / Math.max(1, rowHeight);
       aspectScore += Math.abs(Math.log(aspect / targetAspect)) * tileWeight(item.size);
     });
@@ -361,12 +381,17 @@ export function calculateDashboardFillLayout(
   const safeHeight = Math.max(1, height);
   const availableWidth = Math.max(1, safeWidth - DASHBOARD_PADDING * 2);
   const availableHeight = Math.max(1, safeHeight - DASHBOARD_PADDING * 2);
-  const total = Math.max(1, totalWeight(visibleTiles));
-  let bestRows = partitionRows(visibleTiles, 1);
-  let bestScore = scoreRows(bestRows, availableWidth, availableHeight, total);
+  const maxColumns = calculateDashboardMaxColumns(width);
+  const maxRows = calculateDashboardMaxRows(height);
+  const maxItems = maxColumns * maxRows;
+  const layoutTiles = visibleTiles.slice(0, Math.max(1, maxItems));
+  const total = Math.max(1, totalWeight(layoutTiles));
+  let bestRows: DashboardLayoutRow[] | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
 
-  for (let rowCount = 2; rowCount <= visibleTiles.length; rowCount += 1) {
-    const rows = partitionRows(visibleTiles, rowCount);
+  for (let rowCount = 1; rowCount <= Math.min(layoutTiles.length, maxRows); rowCount += 1) {
+    const rows = partitionRows(layoutTiles, rowCount);
+    if (rows.some((row) => row.items.length > maxColumns)) continue;
     const score = scoreRows(rows, availableWidth, availableHeight, total);
     if (score < bestScore) {
       bestRows = rows;
@@ -374,6 +399,7 @@ export function calculateDashboardFillLayout(
     }
   }
 
+  bestRows ??= layoutTiles.map((tile) => ({ items: [tile], weight: tileWeight(tile.size) }));
   const rowGapTotal = TILE_GAP * Math.max(0, bestRows.length - 1);
   const drawableHeight = Math.max(1, availableHeight - rowGapTotal);
   const rects: DashboardTileRect[] = [];
@@ -385,12 +411,15 @@ export function calculateDashboardFillLayout(
       : Math.max(1, Math.floor(drawableHeight * (row.weight / total)));
     const itemGapTotal = TILE_GAP * Math.max(0, row.items.length - 1);
     const drawableWidth = Math.max(1, availableWidth - itemGapTotal);
+    const extraWidth = Math.max(0, drawableWidth - TILE_MIN_WIDTH * row.items.length);
     let left = DASHBOARD_PADDING;
 
     row.items.forEach((item, itemIndex) => {
       const itemWidth = itemIndex === row.items.length - 1
         ? Math.max(1, DASHBOARD_PADDING + availableWidth - left)
-        : Math.max(1, Math.floor(drawableWidth * (tileWeight(item.size) / row.weight)));
+        : Math.max(1, Math.floor(row.items.length === 1 && availableWidth < TILE_MIN_WIDTH
+          ? availableWidth
+          : TILE_MIN_WIDTH + extraWidth * (tileWeight(item.size) / row.weight)));
       rects.push({
         uuid: item.uuid,
         left,
@@ -407,6 +436,6 @@ export function calculateDashboardFillLayout(
   return {
     rects,
     capacityWeight,
-    overflow: total > capacityWeight
+    overflow: visibleTiles.length > layoutTiles.length || total > capacityWeight
   };
 }
