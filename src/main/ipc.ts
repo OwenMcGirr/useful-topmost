@@ -169,6 +169,25 @@ async function readWidgetSummary(dir: string): Promise<{ sources: string[]; name
   }
 }
 
+function formatSourceList(sources: string[]): string {
+  const cleaned = sources.map((source) => source.trim()).filter(Boolean).slice(0, 3);
+  if (cleaned.length === 1) return cleaned[0];
+  if (cleaned.length === 2) return `${cleaned[0]} and ${cleaned[1]}`;
+  return `${cleaned[0]}, ${cleaned[1]}, and ${cleaned[2]}`;
+}
+
+export function completionSummaryText(summary: { sources: string[]; name?: string } | undefined): string {
+  const first = summary?.name ? `${summary.name} is ready.` : 'Widget updated.';
+  if (!summary) return `${first} No data sources were recorded.`;
+
+  const sources = summary.sources.map((source) => source.trim()).filter(Boolean);
+  if (sources.length === 0) {
+    return `${first} Self-contained; no external data sources.`;
+  }
+
+  return `${first} Data from ${formatSourceList(sources)}.`;
+}
+
 export interface WidgetPlanProvider { name: string; hostname: string }
 
 export async function readWidgetPlan(dir: string): Promise<WidgetPlanProvider[] | undefined> {
@@ -333,7 +352,7 @@ export function registerIpc(
         if (summary) await widgets.setSummary(uuid, summary);
         await widgets.replaceChatMessage(uuid, status.id, {
           ...status,
-          text: 'Updated',
+          text: completionSummaryText(summary),
           status: 'updated',
           created_at: new Date().toISOString()
         });
@@ -391,7 +410,7 @@ export function registerIpc(
           if (summary) await widgets.setSummary(uuid, summary);
           await widgets.replaceChatMessage(uuid, status.id, {
             ...status,
-            text: 'Updated',
+            text: completionSummaryText(summary),
             status: 'updated',
             created_at: new Date().toISOString()
           });
