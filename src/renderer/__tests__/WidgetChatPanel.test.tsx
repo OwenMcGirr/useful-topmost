@@ -56,6 +56,15 @@ describe('WidgetChatPanel', () => {
     expect(screen.getByText(/preview will appear here/i)).toBeInTheDocument();
   });
 
+  it('focuses the widget message box when create mode opens', async () => {
+    const { api } = mockApi();
+    (window as any).api = api;
+    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+
+    const textarea = screen.getByLabelText(/widget message/i);
+    await waitFor(() => expect(textarea).toHaveFocus());
+  });
+
   it('shows Edit widget, loads messages, and renders preview webview in edit mode', async () => {
     const { api } = mockApi();
     (window as any).api = api;
