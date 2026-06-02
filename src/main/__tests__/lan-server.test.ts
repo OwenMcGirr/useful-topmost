@@ -62,11 +62,53 @@ describe('lan-server', () => {
         uuid,
         prompt: 'weather',
         pinned: true,
-        size: 'wide'
+        size: 'wide',
+        state: 'live'
       })]);
       expect(body[0].selectedProviderIds).toBeUndefined();
       expect(body[0].htmlPath).toBeUndefined();
       expect(JSON.stringify(body)).not.toContain('secret-provider');
+    } finally {
+      await controller.stop();
+    }
+  });
+
+  it('marks widgets without generated HTML as building in read-only metadata', async () => {
+    const root = await freshRoot();
+    const widgets = createWidgetStore(root);
+    const uuid = await widgets.create('weather');
+    await widgets.setProviders(uuid, ['secret-provider']);
+    const controller = createLanServerController({ widgets, secrets: createSecretsStore(root) });
+    const state = await controller.applyConfig({ enabled: true, port: 0 });
+    try {
+      const response = await fetch(`http://127.0.0.1:${state.port}/api/widgets`);
+      const body = await response.json() as any[];
+      expect(body).toEqual([expect.objectContaining({
+        uuid,
+        prompt: 'weather',
+        state: 'building'
+      })]);
+      expect(body[0].selectedProviderIds).toBeUndefined();
+      expect(body[0].htmlPath).toBeUndefined();
+      expect(JSON.stringify(body)).not.toContain('secret-provider');
+    } finally {
+      await controller.stop();
+    }
+  });
+
+  it('marks widgets with generated HTML as live in read-only metadata', async () => {
+    const root = await freshRoot();
+    const { widgets, uuid } = await createWidget(root);
+    const controller = createLanServerController({ widgets, secrets: createSecretsStore(root) });
+    const state = await controller.applyConfig({ enabled: true, port: 0 });
+    try {
+      const response = await fetch(`http://127.0.0.1:${state.port}/api/widgets`);
+      const body = await response.json() as any[];
+      expect(body).toEqual([expect.objectContaining({
+        uuid,
+        prompt: 'weather',
+        state: 'live'
+      })]);
     } finally {
       await controller.stop();
     }
@@ -186,9 +228,28 @@ describe('lan-server', () => {
       expect(client.body).toContain('function updateTile');
       expect(client.body).toContain('if (section !== cursor) nextGrid.insertBefore(section, cursor)');
       expect(client.body).toContain('cursor = section.nextElementSibling');
+      expect(client.body).toContain("if (!iframe) {");
+      expect(client.body).toContain("if (iframe.getAttribute('src') !== nextSrc) iframe.src = nextSrc");
       expect(client.body).not.toContain("root.innerHTML = '<main class=\"grid\">'");
       expect(client.body).not.toContain('nextGrid.appendChild(section)');
       expect(client.body).not.toContain('<iframe title="');
+    } finally {
+      await controller.stop();
+    }
+  });
+
+  it('serves a LAN client that renders building widgets as placeholders', async () => {
+    const root = await freshRoot();
+    const { widgets } = await createWidget(root);
+    const controller = createLanServerController({ widgets, secrets: createSecretsStore(root) });
+    const state = await controller.applyConfig({ enabled: true, port: 0 });
+    try {
+      const client = await readText(`http://127.0.0.1:${state.port}/lan-client.js`);
+      expect(client.body).toContain('Building widget…');
+      expect(client.body).toContain('placeholder-building');
+      expect(client.body).toContain("return widget.state === 'building' ? 'building' : 'live'");
+      expect(client.body).toContain("if (state === 'building')");
+      expect(client.body).not.toContain("iframe.src = '/widgets/' + encodeURIComponent(widget.uuid) + '/'");
     } finally {
       await controller.stop();
     }
