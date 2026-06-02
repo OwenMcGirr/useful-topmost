@@ -7,6 +7,7 @@ import {
   calculateDashboardFillLayout,
   calculateDashboardCapacity,
   calculateDashboardLayout,
+  calculateDashboardMaxColumns,
   calculateDashboardWeightCapacity,
   pickDashboardPageByWeight,
   pickDashboardPage,
@@ -66,6 +67,11 @@ describe('dashboard grid helpers', () => {
     expect(calculateDashboardWeightCapacity(1920, 1080)).toBeGreaterThanOrEqual(20);
   });
 
+  it('calculates maximum dashboard columns from minimum tile width', () => {
+    expect(calculateDashboardMaxColumns(880)).toBe(2);
+    expect(calculateDashboardMaxColumns(1920)).toBeGreaterThanOrEqual(5);
+  });
+
   it('fills the dashboard with one widget', () => {
     const layout = calculateDashboardFillLayout(880, 680, [{ uuid: 'a' }]);
 
@@ -87,6 +93,18 @@ describe('dashboard grid helpers', () => {
     expect(first.width + second.width + TILE_GAP).toBe(880 - DASHBOARD_PADDING * 2);
     expect(first.height).toBe(680 - DASHBOARD_PADDING * 2);
     expect(second.height).toBe(680 - DASHBOARD_PADDING * 2);
+    expect(first.width).toBeGreaterThanOrEqual(TILE_MIN_WIDTH);
+    expect(second.width).toBeGreaterThanOrEqual(TILE_MIN_WIDTH);
+  });
+
+  it('keeps mixed-size row tiles at least the minimum width', () => {
+    const layout = calculateDashboardFillLayout(1200, 800, [
+      { uuid: 'large', size: 'large' },
+      { uuid: 'small-1' },
+      { uuid: 'small-2' }
+    ]);
+
+    expect(layout.rects.every((rect) => rect.width >= TILE_MIN_WIDTH)).toBe(true);
   });
 
   it('fills the dashboard with three widgets without unused outer area', () => {
@@ -110,6 +128,7 @@ describe('dashboard grid helpers', () => {
     expect(rowTops.size).toBeGreaterThan(1);
     expect(Math.max(...layout.rects.map((rect) => rect.left + rect.width))).toBe(1200 - DASHBOARD_PADDING);
     expect(Math.max(...layout.rects.map((rect) => rect.top + rect.height))).toBe(800 - DASHBOARD_PADDING);
+    expect(layout.rects.every((rect) => rect.width >= TILE_MIN_WIDTH)).toBe(true);
   });
 
   it('allocates weighted widget area proportionally', () => {
@@ -136,6 +155,13 @@ describe('dashboard grid helpers', () => {
     expect(first.left).toBe(DASHBOARD_PADDING);
     expect(second.left).toBe(first.left + first.width + TILE_GAP);
     expect(second.left + second.width).toBe(880 - DASHBOARD_PADDING);
+  });
+
+  it('uses available width for one tile on a very narrow viewport', () => {
+    const layout = calculateDashboardFillLayout(260, 500, [{ uuid: 'a' }]);
+
+    expect(layout.rects).toHaveLength(1);
+    expect(layout.rects[0].width).toBe(260 - DASHBOARD_PADDING * 2);
   });
 
   it('picks a random subset with the requested size', () => {
@@ -309,6 +335,13 @@ describe('dashboard grid helpers', () => {
     expect(pickDashboardPageByWeight(tiles, 4, 1).map((tile) => tile.uuid)).toEqual(['small-1', 'small-2']);
   });
 
+  it('weighted page selection pages widgets when item count exceeds capacity', () => {
+    const tiles = ['a', 'b', 'c', 'd', 'e'].map((uuid) => ({ uuid }));
+
+    expect(pickDashboardPageByWeight(tiles, 4, 0).map((tile) => tile.uuid)).toEqual(['a', 'b', 'c', 'd']);
+    expect(pickDashboardPageByWeight(tiles, 4, 1).map((tile) => tile.uuid)).toEqual(['e']);
+  });
+
   it('weighted visible selection includes pinned widgets when pinned weight fits', () => {
     const tiles = [
       { uuid: 'pin', pinned: true },
@@ -333,5 +366,17 @@ describe('dashboard grid helpers', () => {
 
     expect(pickDashboardPageByWeight(tiles, 4, 0).map((tile) => tile.uuid)).toEqual(['large-pin']);
     expect(pickDashboardPageByWeight(tiles, 4, 1).map((tile) => tile.uuid)).toEqual(['small-pin']);
+  });
+
+  it('weighted page selection pages pinned widgets alone when pinned count exceeds capacity', () => {
+    const tiles = [
+      { uuid: 'pin-1', pinned: true },
+      { uuid: 'pin-2', pinned: true },
+      { uuid: 'pin-3', pinned: true },
+      { uuid: 'unpinned' }
+    ];
+
+    expect(pickDashboardPageByWeight(tiles, 2, 0).map((tile) => tile.uuid)).toEqual(['pin-1', 'pin-2']);
+    expect(pickDashboardPageByWeight(tiles, 2, 1).map((tile) => tile.uuid)).toEqual(['pin-3']);
   });
 });

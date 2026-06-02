@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import Dashboard from '../Dashboard';
+import { TILE_MIN_WIDTH } from '../dashboard-grid';
 
 let resizeCallback: ResizeObserverCallback | null = null;
 
@@ -57,6 +58,10 @@ function dashboardTile(container: HTMLElement, uuid: string) {
 
 function px(value: string) {
   return Number.parseFloat(value.replace('px', ''));
+}
+
+function renderedDashboardTiles(container: HTMLElement) {
+  return Array.from(container.querySelectorAll('[data-dashboard-tile]')) as HTMLElement[];
 }
 
 function mockApi(opts: { onboardingDismissed?: boolean } = {}) {
@@ -199,6 +204,8 @@ describe('Dashboard', () => {
     expect(px(first.style.height)).toBe(656);
     expect(px(second.style.height)).toBe(656);
     expect(px(first.style.width) + px(second.style.width) + 12).toBe(856);
+    expect(px(first.style.width)).toBeGreaterThanOrEqual(TILE_MIN_WIDTH);
+    expect(px(second.style.width)).toBeGreaterThanOrEqual(TILE_MIN_WIDTH);
   });
 
   it('does not keep fewer widgets in a compact centered grid', async () => {
@@ -216,6 +223,7 @@ describe('Dashboard', () => {
 
     expect(rightEdge).toBe(868);
     expect(bottomEdge).toBe(668);
+    expect(tiles.every((tile) => px(tile.style.width) >= TILE_MIN_WIDTH)).toBe(true);
   });
 
   it('renders only capacity widgets when widget count exceeds capacity', async () => {
@@ -260,6 +268,7 @@ describe('Dashboard', () => {
 
     expect(rightEdge).toBe(868);
     expect(bottomEdge).toBe(668);
+    expect(tiles.every((tile) => px(tile.style.width) >= TILE_MIN_WIDTH)).toBe(true);
   });
 
   it('next-page button advances to a deterministic slice of the unpinned tiles', async () => {
@@ -439,6 +448,23 @@ describe('Dashboard', () => {
 
     await waitFor(() => expect(px(dashboardTile(container, 'widget-1').style.width)).toBeGreaterThan(before));
     expect(m.api.setWidgetSize).toHaveBeenCalledWith('widget-1', 'wide');
+    expect(renderedDashboardTiles(container).every((tile) => px(tile.style.width) >= TILE_MIN_WIDTH)).toBe(true);
+  });
+
+  it('keeps mixed widget sizes at least the minimum width', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce([
+      { uuid: 'large', prompt: 'large', created_at: '', size: 'large' },
+      { uuid: 'small-1', prompt: 'small 1', created_at: '' },
+      { uuid: 'small-2', prompt: 'small 2', created_at: '' }
+    ]);
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize(1200, 800);
+
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(3));
+    expect(renderedDashboardTiles(container).every((tile) => px(tile.style.width) >= TILE_MIN_WIDTH)).toBe(true);
   });
 
   it('failed size cycle rolls back the weighted layout', async () => {
