@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import Dashboard from '../Dashboard';
 
@@ -447,6 +447,37 @@ describe('Dashboard', () => {
     await userEvent.click(await screen.findByRole('button', { name: /settings/i }));
     expect(await screen.findByRole('heading', { name: /settings/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /api providers/i })).toBeInTheDocument();
+  });
+
+  it('renders dashboard controls dock with Settings and New widget controls', async () => {
+    const m = mockApi();
+    (window as any).api = m.api;
+
+    render(<Dashboard />);
+
+    expect(await screen.findByRole('group', { name: /dashboard controls/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /settings/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /new widget/i })).toBeInTheDocument();
+  });
+
+  it('reveals dashboard controls when the pointer enters the reveal zone', async () => {
+    vi.useFakeTimers();
+    const m = mockApi({ onboardingDismissed: true });
+    (window as any).api = m.api;
+
+    render(<Dashboard />);
+    const controls = screen.getByRole('group', { name: /dashboard controls/i });
+    const dock = controls.querySelector('[data-visible]') as HTMLElement;
+    expect(dock).toHaveAttribute('data-visible', 'true');
+
+    act(() => {
+      vi.advanceTimersByTime(1800);
+    });
+    expect(dock).toHaveAttribute('data-visible', 'false');
+
+    fireEvent.pointerEnter(controls);
+
+    expect(dock).toHaveAttribute('data-visible', 'true');
   });
 
   it('existing live tile opens chat and sends edits without replacing the live tile immediately', async () => {

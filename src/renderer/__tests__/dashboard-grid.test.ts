@@ -1,13 +1,51 @@
 import { describe, expect, it, vi } from 'vitest';
-import { calculateDashboardCapacity, pickDashboardPage, pickRandomTiles, pickVisibleDashboardTiles } from '../dashboard-grid';
+import {
+  TILE_MIN_HEIGHT,
+  TILE_MIN_WIDTH,
+  calculateDashboardCapacity,
+  calculateDashboardLayout,
+  pickDashboardPage,
+  pickRandomTiles,
+  pickVisibleDashboardTiles
+} from '../dashboard-grid';
 
 describe('dashboard grid helpers', () => {
-  it('calculates fixed tile capacity from available space', () => {
+  it('calculates responsive tile capacity from available space', () => {
     expect(calculateDashboardCapacity(880, 680)).toEqual({
       columns: 2,
       rows: 2,
       capacity: 4
     });
+  });
+
+  it('calculates responsive tile dimensions for a small viewport', () => {
+    const layout = calculateDashboardLayout(880, 680);
+
+    expect(layout.columns).toBe(2);
+    expect(layout.rows).toBe(2);
+    expect(layout.capacity).toBe(4);
+    expect(layout.tileWidth).toBeGreaterThan(TILE_MIN_WIDTH);
+    expect(layout.tileHeight).toBeGreaterThan(TILE_MIN_HEIGHT);
+  });
+
+  it('uses more of a large viewport', () => {
+    const layout = calculateDashboardLayout(1920, 1080);
+
+    expect(layout.columns).toBeGreaterThanOrEqual(5);
+    expect(layout.rows).toBeGreaterThanOrEqual(4);
+    expect(layout.capacity).toBeGreaterThanOrEqual(20);
+    expect(layout.tileWidth).toBeGreaterThanOrEqual(TILE_MIN_WIDTH);
+    expect(layout.tileHeight).toBeGreaterThanOrEqual(TILE_MIN_HEIGHT);
+  });
+
+  it('keeps at least one tile on tiny viewports', () => {
+    const layout = calculateDashboardLayout(200, 140);
+
+    expect(layout.columns).toBe(1);
+    expect(layout.rows).toBe(1);
+    expect(layout.capacity).toBe(1);
+    expect(layout.tileWidth).toBeGreaterThanOrEqual(TILE_MIN_WIDTH);
+    expect(layout.tileHeight).toBeGreaterThanOrEqual(TILE_MIN_HEIGHT);
   });
 
   it('picks a random subset with the requested size', () => {

@@ -1,7 +1,7 @@
-export const TILE_WIDTH = 400;
-export const TILE_HEIGHT = 300;
-export const TILE_GAP = 16;
-export const DASHBOARD_PADDING = 24;
+export const TILE_MIN_WIDTH = 320;
+export const TILE_MIN_HEIGHT = 240;
+export const TILE_GAP = 12;
+export const DASHBOARD_PADDING = 12;
 export const SHUFFLE_INTERVAL_MS = 60_000;
 
 export interface DashboardCapacity {
@@ -10,13 +10,37 @@ export interface DashboardCapacity {
   capacity: number;
 }
 
-export function calculateDashboardCapacity(width: number, height: number): DashboardCapacity {
-  const availableWidth = Math.max(0, width - DASHBOARD_PADDING * 2);
-  const availableHeight = Math.max(0, height - DASHBOARD_PADDING * 2);
-  const columns = Math.max(1, Math.floor((availableWidth + TILE_GAP) / (TILE_WIDTH + TILE_GAP)));
-  const rows = Math.max(1, Math.floor((availableHeight + TILE_GAP) / (TILE_HEIGHT + TILE_GAP)));
+export interface DashboardLayout extends DashboardCapacity {
+  tileWidth: number;
+  tileHeight: number;
+  gap: number;
+  padding: number;
+}
 
-  return { columns, rows, capacity: columns * rows };
+export function calculateDashboardLayout(width: number, height: number): DashboardLayout {
+  const safeWidth = Math.max(1, width);
+  const safeHeight = Math.max(1, height);
+  const availableWidth = Math.max(TILE_MIN_WIDTH, safeWidth - DASHBOARD_PADDING * 2);
+  const availableHeight = Math.max(TILE_MIN_HEIGHT, safeHeight - DASHBOARD_PADDING * 2);
+  const columns = Math.max(1, Math.floor((availableWidth + TILE_GAP) / (TILE_MIN_WIDTH + TILE_GAP)));
+  const rows = Math.max(1, Math.floor((availableHeight + TILE_GAP) / (TILE_MIN_HEIGHT + TILE_GAP)));
+  const tileWidth = Math.floor((availableWidth - TILE_GAP * (columns - 1)) / columns);
+  const tileHeight = Math.floor((availableHeight - TILE_GAP * (rows - 1)) / rows);
+
+  return {
+    columns,
+    rows,
+    capacity: columns * rows,
+    tileWidth,
+    tileHeight,
+    gap: TILE_GAP,
+    padding: DASHBOARD_PADDING
+  };
+}
+
+export function calculateDashboardCapacity(width: number, height: number): DashboardCapacity {
+  const { columns, rows, capacity } = calculateDashboardLayout(width, height);
+  return { columns, rows, capacity };
 }
 
 export function shuffleTiles<T>(items: T[]): T[] {

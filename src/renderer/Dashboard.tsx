@@ -8,10 +8,8 @@ import WidgetChatPanel from './WidgetChatPanel';
 import type { Widget, TileState } from './types';
 import type { UpdateState } from '../preload';
 import {
-  DASHBOARD_PADDING,
   SHUFFLE_INTERVAL_MS,
-  TILE_GAP,
-  calculateDashboardCapacity,
+  calculateDashboardLayout,
   pickDashboardPage,
   pickVisibleDashboardTiles
 } from './dashboard-grid';
@@ -50,37 +48,64 @@ type ChatState =
   | { open: true; mode: 'create'; initialMessage?: string }
   | { open: true; mode: 'edit'; widget: { uuid: string; prompt: string; htmlUrl?: string; selectedProviderIds?: string[]; refreshTtlMs?: number }; initialMessage?: string };
 
-const PLUS_BUTTON: React.CSSProperties = {
-  position: 'fixed', bottom: 32, right: 32,
-  width: 64, height: 64, borderRadius: '50%',
-  background: '#238636', color: '#fff', fontSize: 32,
-  border: 0, cursor: 'pointer', zIndex: 50
+const CONTROLS_REVEAL_ZONE: React.CSSProperties = {
+  position: 'fixed',
+  right: 0,
+  bottom: 0,
+  width: 420,
+  maxWidth: '100vw',
+  height: 136,
+  zIndex: 50,
+  display: 'flex',
+  alignItems: 'flex-end',
+  justifyContent: 'flex-end',
+  padding: 16
 };
 
-const GEAR_BUTTON: React.CSSProperties = {
-  position: 'fixed', bottom: 32, right: 112,
-  width: 48, height: 48, borderRadius: '50%',
-  background: '#21262d', color: '#e6edf3', fontSize: 20,
-  border: '1px solid #30363d', cursor: 'pointer', zIndex: 50
+const CONTROLS_DOCK_BASE: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: 8,
+  borderRadius: 8,
+  border: '1px solid rgba(240, 246, 252, 0.14)',
+  background: 'rgba(13, 17, 23, 0.74)',
+  boxShadow: '0 12px 40px rgba(0, 0, 0, 0.34)',
+  backdropFilter: 'blur(14px)',
+  WebkitBackdropFilter: 'blur(14px)',
+  transition: 'opacity 160ms ease, transform 160ms ease'
 };
 
-const PAGER_BUTTON: React.CSSProperties = {
-  height: 48, width: 48, padding: 0, borderRadius: 24,
+const DOCK_ICON_BUTTON: React.CSSProperties = {
+  width: 44,
+  height: 44,
+  borderRadius: 22,
   background: '#21262d', color: '#e6edf3', fontSize: 18,
-  border: '1px solid #30363d', cursor: 'pointer'
-};
-
-const PAGER_BAR: React.CSSProperties = {
-  position: 'fixed', bottom: 32, right: 176,
-  display: 'flex', alignItems: 'center', gap: 8, zIndex: 50
+  border: '1px solid #30363d',
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 0
 };
 
 const PAGER_COUNT: React.CSSProperties = {
   color: '#8b949e', fontSize: 12, padding: '0 4px'
 };
 
-const SHUFFLE_BUTTON: React.CSSProperties = {
-  height: 48, padding: '0 16px', borderRadius: 24,
+const DOCK_PRIMARY_BUTTON: React.CSSProperties = {
+  ...DOCK_ICON_BUTTON,
+  width: 52,
+  height: 52,
+  borderRadius: 26,
+  background: '#238636',
+  borderColor: '#238636',
+  color: '#fff',
+  fontSize: 30
+};
+
+const DOCK_TEXT_BUTTON: React.CSSProperties = {
+  height: 44, padding: '0 14px', borderRadius: 22,
   background: '#21262d', color: '#e6edf3', fontSize: 14,
   border: '1px solid #30363d', cursor: 'pointer'
 };
@@ -111,26 +136,30 @@ export default function Dashboard() {
   const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' });
   const [geekMode, setGeekMode] = useState(false);
   const [addProviderSeedQuery, setAddProviderSeedQuery] = useState<string | null>(null);
+  const [controlsVisible, setControlsVisible] = useState(true);
   const editBuilds = useRef<Set<string>>(new Set());
   const gridRef = useRef<HTMLDivElement | null>(null);
+  const controlsHideTimer = useRef<number | null>(null);
 
-  const { columns, capacity } = useMemo(() => {
+  const layout = useMemo(() => {
     const width = gridSize.width || window.innerWidth || 1;
     const height = gridSize.height || window.innerHeight || 1;
-    return calculateDashboardCapacity(width, height);
+    return calculateDashboardLayout(width, height);
   }, [gridSize.height, gridSize.width]);
+  const { capacity } = layout;
 
   const gridStyle = useMemo<React.CSSProperties>(() => ({
     display: 'grid',
-    gridTemplateColumns: `repeat(${columns}, 400px)`,
-    gridAutoRows: '300px',
-    gap: TILE_GAP,
-    padding: DASHBOARD_PADDING,
+    gridTemplateColumns: `repeat(${layout.columns}, minmax(0, ${layout.tileWidth}px))`,
+    gridAutoRows: `${layout.tileHeight}px`,
+    gap: layout.gap,
+    padding: layout.padding,
     justifyContent: 'center',
     alignContent: 'center',
     height: '100vh',
+    width: '100vw',
     overflow: 'hidden'
-  }), [columns]);
+  }), [layout]);
 
   const tileSelectionKey = useMemo(
     () => tiles.map((tile) => `${tile.uuid}:${tile.pinned === true ? '1' : '0'}`).join('|'),
@@ -140,6 +169,31 @@ export default function Dashboard() {
   useEffect(() => {
     void window.api.onboarding.get().then((s) => setOnboardingDismissed(s.dismissed));
   }, []);
+
+  const clearControlsHideTimer = useCallback(() => {
+    if (controlsHideTimer.current !== null) {
+      window.clearTimeout(controlsHideTimer.current);
+      controlsHideTimer.current = null;
+    }
+  }, []);
+
+  const scheduleControlsHide = useCallback(() => {
+    clearControlsHideTimer();
+    controlsHideTimer.current = window.setTimeout(() => {
+      setControlsVisible(false);
+      controlsHideTimer.current = null;
+    }, 1800);
+  }, [clearControlsHideTimer]);
+
+  const revealControls = useCallback(() => {
+    setControlsVisible(true);
+    scheduleControlsHide();
+  }, [scheduleControlsHide]);
+
+  useEffect(() => {
+    scheduleControlsHide();
+    return clearControlsHideTimer;
+  }, [clearControlsHideTimer, scheduleControlsHide]);
 
   useEffect(() => {
     const node = gridRef.current;
@@ -476,18 +530,38 @@ export default function Dashboard() {
           ))}
         </AnimatePresence>
       </div>
-      {showShuffle && (
-        <div style={PAGER_BAR}>
-          <span style={PAGER_COUNT} aria-label="Visible widgets">
-            {visibleTiles.length} of {tiles.length}
-          </span>
-          <button aria-label="Previous page" title="Previous page" style={PAGER_BUTTON} onClick={() => stepPage(-1)}>‹</button>
-          <button aria-label="Next page" title="Next page" style={PAGER_BUTTON} onClick={() => stepPage(1)}>›</button>
-          <button aria-label="Shuffle widgets" title="Shuffle visible widgets" style={SHUFFLE_BUTTON} onClick={shuffleVisibleTiles}>Shuffle</button>
+      <div
+        role="group"
+        aria-label="Dashboard controls"
+        style={CONTROLS_REVEAL_ZONE}
+        onPointerEnter={revealControls}
+        onPointerMove={revealControls}
+        onFocus={revealControls}
+        onBlur={scheduleControlsHide}
+      >
+        <div
+          data-visible={controlsVisible ? 'true' : 'false'}
+          style={{
+            ...CONTROLS_DOCK_BASE,
+            opacity: controlsVisible ? 1 : 0,
+            transform: controlsVisible ? 'translateY(0)' : 'translateY(10px)',
+            pointerEvents: controlsVisible ? 'auto' : 'none'
+          }}
+        >
+          {showShuffle && (
+            <>
+              <span style={PAGER_COUNT} aria-label="Visible widgets">
+                {visibleTiles.length} of {tiles.length}
+              </span>
+              <button aria-label="Previous page" title="Previous page" style={DOCK_ICON_BUTTON} onClick={() => stepPage(-1)}>‹</button>
+              <button aria-label="Next page" title="Next page" style={DOCK_ICON_BUTTON} onClick={() => stepPage(1)}>›</button>
+              <button aria-label="Shuffle widgets" title="Shuffle visible widgets" style={DOCK_TEXT_BUTTON} onClick={shuffleVisibleTiles}>Shuffle</button>
+            </>
+          )}
+          <button aria-label="Settings" title="Settings" style={DOCK_ICON_BUTTON} onClick={() => setSettingsOpen(true)}>⚙</button>
+          <button aria-label="New widget" title="New widget" style={DOCK_PRIMARY_BUTTON} onClick={() => setChat({ open: true, mode: 'create' })}>+</button>
         </div>
-      )}
-      <button aria-label="Settings" title="Settings" style={GEAR_BUTTON} onClick={() => setSettingsOpen(true)}>⚙</button>
-      <button aria-label="New widget" title="New widget" style={PLUS_BUTTON} onClick={() => setChat({ open: true, mode: 'create' })}>+</button>
+      </div>
       <WidgetChatPanel
         open={chat.open}
         mode={chat.open ? chat.mode : 'create'}
@@ -526,3 +600,4 @@ export default function Dashboard() {
     </>
   );
 }
+
