@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { WidgetChatMessage } from '../preload';
 import type { PublicProvider } from '../main/secrets-store';
 import { categorizeError, stripFailedPrefix } from './errors';
@@ -176,6 +176,7 @@ export default function WidgetChatPanel({
   const [refreshTtlMs, setRefreshTtlMs] = useState<number>(DEFAULT_REFRESH_TTL_MS);
   const [refreshDirty, setRefreshDirty] = useState<boolean>(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     if (!confirmingDelete) return;
@@ -208,6 +209,11 @@ export default function WidgetChatPanel({
       void loadChat(widget.uuid);
     }
   }, [open, initialMessage, widget?.uuid, widget?.htmlUrl]);
+
+  useEffect(() => {
+    if (!open || mode !== 'create') return;
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
+  }, [open, mode]);
 
   useEffect(() => {
     if (!open) return;
@@ -585,6 +591,7 @@ export default function WidgetChatPanel({
 
       <div style={COMPOSER}>
         <textarea
+          ref={textareaRef}
           aria-label="Widget message"
           style={TEXTAREA}
           value={value}
