@@ -51,6 +51,14 @@ function renderedWidgetSrcs(container: HTMLElement) {
   return Array.from(container.querySelectorAll('webview')).map((webview) => webview.getAttribute('src') ?? '');
 }
 
+function dashboardTile(container: HTMLElement, uuid: string) {
+  return container.querySelector(`[data-dashboard-tile="${uuid}"]`) as HTMLElement;
+}
+
+function px(value: string) {
+  return Number.parseFloat(value.replace('px', ''));
+}
+
 function mockApi(opts: { onboardingDismissed?: boolean } = {}) {
   const readyHandlers: Array<(uuid: string) => void> = [];
   const errorHandlers: Array<(uuid: string, msg: string) => void> = [];
@@ -159,6 +167,57 @@ describe('Dashboard', () => {
     expect(screen.queryByRole('button', { name: /shuffle widgets/i })).toBeNull();
   });
 
+  it('fills the dashboard with one widget', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce(widgets(1));
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize();
+
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(1));
+    const tile = dashboardTile(container, 'widget-1');
+
+    expect(px(tile.style.left)).toBe(12);
+    expect(px(tile.style.top)).toBe(12);
+    expect(px(tile.style.width)).toBe(856);
+    expect(px(tile.style.height)).toBe(656);
+  });
+
+  it('fills the dashboard with two widgets', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce(widgets(2));
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize();
+
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(2));
+    const first = dashboardTile(container, 'widget-1');
+    const second = dashboardTile(container, 'widget-2');
+
+    expect(px(first.style.height)).toBe(656);
+    expect(px(second.style.height)).toBe(656);
+    expect(px(first.style.width) + px(second.style.width) + 12).toBe(856);
+  });
+
+  it('does not keep fewer widgets in a compact centered grid', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce(widgets(3));
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize();
+
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(3));
+    const tiles = ['widget-1', 'widget-2', 'widget-3'].map((uuid) => dashboardTile(container, uuid));
+    const rightEdge = Math.max(...tiles.map((tile) => px(tile.style.left) + px(tile.style.width)));
+    const bottomEdge = Math.max(...tiles.map((tile) => px(tile.style.top) + px(tile.style.height)));
+
+    expect(rightEdge).toBe(868);
+    expect(bottomEdge).toBe(668);
+  });
+
   it('renders only capacity widgets when widget count exceeds capacity', async () => {
     const m = mockApi({ onboardingDismissed: true });
     m.api.listWidgets.mockResolvedValueOnce(widgets(5));
@@ -182,6 +241,25 @@ describe('Dashboard', () => {
     await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(4));
 
     expect(screen.getByLabelText(/visible widgets/i).textContent).toBe('4 of 7');
+  });
+
+  it('fills the final page when it has fewer widgets than capacity', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce(widgets(7));
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize();
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(4));
+
+    await userEvent.click(screen.getByRole('button', { name: /next page/i }));
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(3));
+    const tiles = ['widget-5', 'widget-6', 'widget-7'].map((uuid) => dashboardTile(container, uuid));
+    const rightEdge = Math.max(...tiles.map((tile) => px(tile.style.left) + px(tile.style.width)));
+    const bottomEdge = Math.max(...tiles.map((tile) => px(tile.style.top) + px(tile.style.height)));
+
+    expect(rightEdge).toBe(868);
+    expect(bottomEdge).toBe(668);
   });
 
   it('next-page button advances to a deterministic slice of the unpinned tiles', async () => {
@@ -345,6 +423,38 @@ describe('Dashboard', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Unpin' }));
     expect(m.api.setWidgetPinned).toHaveBeenCalledWith('widget-1', false);
     expect(await screen.findByRole('button', { name: 'Pin' })).toBeInTheDocument();
+  });
+
+  it('cycling widget size changes layout weight optimistically', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce(widgets(2));
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize();
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(2));
+    const before = px(dashboardTile(container, 'widget-1').style.width);
+
+    await userEvent.click(screen.getAllByRole('button', { name: /size 1/i })[0]);
+
+    await waitFor(() => expect(px(dashboardTile(container, 'widget-1').style.width)).toBeGreaterThan(before));
+    expect(m.api.setWidgetSize).toHaveBeenCalledWith('widget-1', 'wide');
+  });
+
+  it('failed size cycle rolls back the weighted layout', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce(widgets(2));
+    m.api.setWidgetSize.mockRejectedValueOnce(new Error('nope'));
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize();
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(2));
+    const before = px(dashboardTile(container, 'widget-1').style.width);
+
+    await userEvent.click(screen.getAllByRole('button', { name: /size 1/i })[0]);
+
+    await waitFor(() => expect(px(dashboardTile(container, 'widget-1').style.width)).toBe(before));
   });
 
   it('failed pin IPC reverts tile state', async () => {

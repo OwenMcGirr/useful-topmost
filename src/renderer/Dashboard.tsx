@@ -9,12 +9,13 @@ import type { Widget, TileState } from './types';
 import type { UpdateState } from '../preload';
 import {
   SHUFFLE_INTERVAL_MS,
-  calculateDashboardLayout,
-  pickDashboardPage,
-  pickVisibleDashboardTiles
+  calculateDashboardFillLayout,
+  calculateDashboardWeightCapacity,
+  getDashboardPageCountByWeight,
+  pickDashboardPageByWeight,
+  pickVisibleDashboardTilesByWeight,
+  type TileSize
 } from './dashboard-grid';
-
-type TileSize = 'small' | 'wide' | 'large';
 
 interface TileEntry {
   uuid: string;
@@ -34,14 +35,6 @@ const SIZE_CYCLE: Record<TileSize, TileSize> = {
   wide: 'large',
   large: 'small'
 };
-
-function gridSpan(size: TileSize | undefined): React.CSSProperties {
-  switch (size) {
-    case 'wide': return { gridColumn: 'span 2' };
-    case 'large': return { gridColumn: 'span 2', gridRow: 'span 2' };
-    default: return {};
-  }
-}
 
 type ChatState =
   | { open: false }
@@ -141,25 +134,18 @@ export default function Dashboard() {
   const gridRef = useRef<HTMLDivElement | null>(null);
   const controlsHideTimer = useRef<number | null>(null);
 
-  const layout = useMemo(() => {
+  const capacityWeight = useMemo(() => {
     const width = gridSize.width || window.innerWidth || 1;
     const height = gridSize.height || window.innerHeight || 1;
-    return calculateDashboardLayout(width, height);
+    return calculateDashboardWeightCapacity(width, height);
   }, [gridSize.height, gridSize.width]);
-  const { capacity } = layout;
 
   const gridStyle = useMemo<React.CSSProperties>(() => ({
-    display: 'grid',
-    gridTemplateColumns: `repeat(${layout.columns}, minmax(0, ${layout.tileWidth}px))`,
-    gridAutoRows: `${layout.tileHeight}px`,
-    gap: layout.gap,
-    padding: layout.padding,
-    justifyContent: 'center',
-    alignContent: 'center',
+    position: 'relative',
     height: '100vh',
     width: '100vw',
     overflow: 'hidden'
-  }), [layout]);
+  }), []);
 
   const tileSelectionKey = useMemo(
     () => tiles.map((tile) => `${tile.uuid}:${tile.pinned === true ? '1' : '0'}`).join('|'),
@@ -434,24 +420,21 @@ export default function Dashboard() {
   const shuffleVisibleTiles = useCallback(() => {
     setPageIndex(null);
     setVisibleIds((previousIds) => {
-      if (tiles.length <= capacity) return tiles.map((tile) => tile.uuid);
+      if (getDashboardPageCountByWeight(tiles, capacityWeight) <= 1) {
+        return tiles.map((tile) => tile.uuid);
+      }
 
       const previousTiles = previousIds
         .map((id) => tiles.find((tile) => tile.uuid === id))
         .filter((tile): tile is TileEntry => Boolean(tile));
 
-      return pickVisibleDashboardTiles(tiles, capacity, previousTiles).map((tile) => tile.uuid);
+      return pickVisibleDashboardTilesByWeight(tiles, capacityWeight, previousTiles).map((tile) => tile.uuid);
     });
-  }, [capacity, tiles]);
+  }, [capacityWeight, tiles]);
 
   const pageCount = useMemo(() => {
-    if (tiles.length <= capacity) return 1;
-    const pinnedCount = tiles.filter((tile) => tile.pinned === true).length;
-    if (pinnedCount >= capacity) return 1;
-    const unpinnedCount = tiles.length - pinnedCount;
-    const slots = capacity - pinnedCount;
-    return Math.max(1, Math.ceil(unpinnedCount / slots));
-  }, [capacity, tiles]);
+    return getDashboardPageCountByWeight(tiles, capacityWeight);
+  }, [capacityWeight, tiles]);
 
   const stepPage = useCallback((delta: number) => {
     setPageIndex((current) => {
@@ -462,37 +445,39 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (pageIndex !== null) {
-      setVisibleIds(pickDashboardPage(tiles, capacity, pageIndex).map((tile) => tile.uuid));
+      setVisibleIds(pickDashboardPageByWeight(tiles, capacityWeight, pageIndex).map((tile) => tile.uuid));
       return;
     }
-    setVisibleIds((previousIds) => {
-      if (tiles.length <= capacity) return tiles.map((tile) => tile.uuid);
+    setVisibleIds(() => {
+      if (pageCount <= 1) return tiles.map((tile) => tile.uuid);
 
-      const currentVisibleTiles = previousIds
-        .map((id) => tiles.find((tile) => tile.uuid === id))
-        .filter((tile): tile is TileEntry => Boolean(tile));
-
-      return pickVisibleDashboardTiles(tiles, capacity, currentVisibleTiles).map((tile) => tile.uuid);
+      return pickDashboardPageByWeight(tiles, capacityWeight, 0).map((tile) => tile.uuid);
     });
-  }, [capacity, tileSelectionKey, tiles, pageIndex]);
+  }, [capacityWeight, pageCount, tileSelectionKey, tiles, pageIndex]);
 
   useEffect(() => {
-    if (tiles.length <= capacity || pageIndex !== null) return;
+    if (pageCount <= 1 || pageIndex !== null) return;
     const interval = window.setInterval(shuffleVisibleTiles, SHUFFLE_INTERVAL_MS);
     return () => window.clearInterval(interval);
-  }, [capacity, shuffleVisibleTiles, tiles.length, pageIndex]);
+  }, [pageCount, shuffleVisibleTiles, pageIndex]);
 
   const visibleTiles = useMemo(() => {
-    if (tiles.length <= capacity) return tiles;
+    if (pageCount <= 1) return tiles;
 
     return visibleIds
       .map((id) => tiles.find((tile) => tile.uuid === id))
       .filter((tile): tile is TileEntry => Boolean(tile));
-  }, [capacity, tiles, visibleIds]);
+  }, [pageCount, tiles, visibleIds]);
 
   const showWelcome = tiles.length === 0 && onboardingDismissed === false;
   const showPassiveHint = tiles.length === 0 && onboardingDismissed === true;
-  const showShuffle = tiles.length > capacity;
+  const showShuffle = pageCount > 1;
+  const layout = useMemo(() => {
+    const width = gridSize.width || window.innerWidth || 1;
+    const height = gridSize.height || window.innerHeight || 1;
+    return calculateDashboardFillLayout(width, height, visibleTiles);
+  }, [gridSize.height, gridSize.width, visibleTiles]);
+  const tileRects = useMemo(() => new Map(layout.rects.map((rect) => [rect.uuid, rect])), [layout.rects]);
 
   return (
     <>
@@ -506,7 +491,14 @@ export default function Dashboard() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.96 }}
               transition={{ duration: 0.18 }}
-              style={gridSpan(t.size)}
+              data-dashboard-tile={t.uuid}
+              style={{
+                position: 'absolute',
+                left: tileRects.get(t.uuid)?.left ?? 0,
+                top: tileRects.get(t.uuid)?.top ?? 0,
+                width: tileRects.get(t.uuid)?.width ?? 1,
+                height: tileRects.get(t.uuid)?.height ?? 1
+              }}
             >
               <Tile
                 uuid={t.uuid}
