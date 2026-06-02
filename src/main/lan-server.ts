@@ -45,6 +45,15 @@ function widgetTitle(widget) {
   return String(widget.prompt || 'Widget');
 }
 
+function widgetState(widget) {
+  return widget.state === 'building' ? 'building' : 'live';
+}
+
+function widgetSubtitle(widget) {
+  const prompt = String(widget.prompt || '').trim();
+  return prompt || 'Preparing your widget.';
+}
+
 function ensureGrid() {
   if (!root) return null;
   if (grid && grid.isConnected) return grid;
@@ -71,18 +80,59 @@ function createTile(widget) {
   const section = document.createElement('section');
   section.dataset.uuid = widget.uuid;
 
-  const iframe = document.createElement('iframe');
-  iframe.src = '/widgets/' + encodeURIComponent(widget.uuid) + '/';
-  section.appendChild(iframe);
-
   updateTile(section, widget);
   return section;
 }
 
 function updateTile(section, widget) {
   section.className = sizeClass(widget.size);
-  const iframe = section.querySelector('iframe');
-  if (iframe) iframe.title = widgetTitle(widget);
+  const state = widgetState(widget);
+  section.dataset.state = state;
+
+  if (state === 'building') {
+    const iframe = section.querySelector('iframe');
+    if (iframe) iframe.remove();
+
+    let placeholder = section.querySelector('.placeholder-building');
+    if (!placeholder) {
+      placeholder = document.createElement('div');
+      placeholder.className = 'placeholder placeholder-building';
+      placeholder.setAttribute('role', 'status');
+      placeholder.setAttribute('aria-live', 'polite');
+
+      const spinner = document.createElement('span');
+      spinner.className = 'spinner';
+      spinner.setAttribute('aria-hidden', 'true');
+      placeholder.appendChild(spinner);
+
+      const copy = document.createElement('div');
+      const title = document.createElement('div');
+      title.className = 'placeholder-title';
+      title.textContent = 'Building widget…';
+      const subtitle = document.createElement('div');
+      subtitle.className = 'placeholder-subtitle';
+      copy.appendChild(title);
+      copy.appendChild(subtitle);
+      placeholder.appendChild(copy);
+      section.appendChild(placeholder);
+    }
+
+    const subtitle = placeholder.querySelector('.placeholder-subtitle');
+    if (subtitle) subtitle.textContent = widgetSubtitle(widget);
+    return;
+  }
+
+  const placeholder = section.querySelector('.placeholder-building');
+  if (placeholder) placeholder.remove();
+
+  let iframe = section.querySelector('iframe');
+  const nextSrc = '/widgets/' + encodeURIComponent(widget.uuid) + '/';
+  if (!iframe) {
+    iframe = document.createElement('iframe');
+    section.appendChild(iframe);
+  }
+  if (iframe.getAttribute('src') !== nextSrc) iframe.src = nextSrc;
+  iframe.title = widgetTitle(widget);
 }
 
 function findTile(nextGrid, uuid) {
@@ -144,6 +194,11 @@ const INDEX_HTML = `<!doctype html>
     .tile-wide { grid-column: span 2; }
     .tile-large { grid-column: span 2; grid-row: span 2; }
     iframe { width: 100%; height: 100%; border: 0; display: block; background: #161b22; }
+    .placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 20px; color: #8b949e; text-align: left; }
+    .placeholder-title { color: #e6edf3; font-size: 14px; font-weight: 600; }
+    .placeholder-subtitle { margin-top: 4px; max-width: 280px; color: #8b949e; font-size: 12px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .spinner { width: 16px; height: 16px; border: 2px solid #30363d; border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.8s linear infinite; flex: 0 0 auto; }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .empty { min-height: 100vh; display: flex; align-items: center; justify-content: center; color: #8b949e; font-size: 14px; }
     @media (max-width: 760px) {
       .grid { grid-template-columns: minmax(0, 1fr); grid-auto-rows: 260px; padding: 12px; }
@@ -367,17 +422,19 @@ export function createLanServerController({ widgets, secrets, appFetch = default
 
     if (req.method === 'GET' && pathname === '/api/widgets') {
       const list = await widgets.list();
-      json(res, 200, [...list]
+      const rows = await Promise.all([...list]
         .sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true))
-        .map((widget) => ({
+        .map(async (widget) => ({
           uuid: widget.uuid,
           prompt: widget.prompt,
           created_at: widget.created_at,
           pinned: widget.pinned === true,
           size: widget.size,
           summary: widget.summary,
-          refreshTtlMs: widget.refreshTtlMs
+          refreshTtlMs: widget.refreshTtlMs,
+          state: await widgets.readWidgetHtml(widget.uuid) === null ? 'building' : 'live'
         })));
+      json(res, 200, rows);
       return;
     }
 
