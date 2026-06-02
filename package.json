@@ -1,6 +1,6 @@
 {
   "name": "useful-topmost",
-  "version": "2026.1.0-rc.7",
+  "version": "2026.1.0-rc.8",
   "description": "Frameless full-screen Electron dashboard whose widgets are generated on the fly by the OpenAI Codex CLI.",
   "main": "out/main/index.js",
   "scripts": {
