@@ -2,7 +2,7 @@ import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type { IpcMain, WebContents } from 'electron';
-import type { WidgetStore } from './widget-store';
+import type { WidgetStore, WidgetSummary } from './widget-store';
 import type { SecretsStore, Provider } from './secrets-store';
 import type { OnboardingStore } from './onboarding-store';
 import type { PrefsStore } from './prefs-store';
@@ -154,7 +154,13 @@ function chatMessage(role: 'user' | 'status', text: string, status?: 'building' 
   };
 }
 
-async function readWidgetSummary(dir: string): Promise<{ sources: string[]; name?: string } | undefined> {
+function normalizeConclusion(value: string): string {
+  const trimmed = value.trim().replace(/\s+/g, ' ');
+  if (!trimmed) return trimmed;
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+async function readWidgetSummary(dir: string): Promise<WidgetSummary | undefined> {
   try {
     const raw = await fs.readFile(path.join(dir, WIDGET_SUMMARY_OUTPUT_FILE), 'utf8');
     const parsed = JSON.parse(raw);
@@ -163,7 +169,15 @@ async function readWidgetSummary(dir: string): Promise<{ sources: string[]; name
     if (!Array.isArray(sources) || !sources.every((s: any) => typeof s === 'string')) return undefined;
     const rawName = (parsed as any).name;
     const name = typeof rawName === 'string' && rawName.trim().length > 0 ? rawName.trim() : undefined;
-    return name === undefined ? { sources } : { sources, name };
+    const rawConclusion = (parsed as any).conclusion;
+    const conclusion = typeof rawConclusion === 'string' && rawConclusion.trim().length > 0
+      ? normalizeConclusion(rawConclusion)
+      : undefined;
+    return {
+      sources,
+      ...(name === undefined ? {} : { name }),
+      ...(conclusion === undefined ? {} : { conclusion })
+    };
   } catch {
     return undefined;
   }
@@ -176,7 +190,11 @@ function formatSourceList(sources: string[]): string {
   return `${cleaned[0]}, ${cleaned[1]}, and ${cleaned[2]}`;
 }
 
-export function completionSummaryText(summary: { sources: string[]; name?: string } | undefined): string {
+export function completionSummaryText(summary: WidgetSummary | undefined): string {
+  if (summary && 'conclusion' in summary && typeof summary.conclusion === 'string' && summary.conclusion.trim()) {
+    return normalizeConclusion(summary.conclusion);
+  }
+
   const first = summary?.name ? `${summary.name} is ready.` : 'Widget updated.';
   if (!summary) return `${first} No data sources were recorded.`;
 

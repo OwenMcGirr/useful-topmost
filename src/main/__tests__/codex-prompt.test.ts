@@ -30,11 +30,13 @@ describe('codex-prompt', () => {
     expect(CODEX_SYSTEM_PROMPT).toContain('Before writing index.html');
   });
 
-  it('instructs Codex to write a summary.json sidecar with name + sources', () => {
+  it('instructs Codex to write a summary.json sidecar with name, conclusion, and sources', () => {
     expect(CODEX_SYSTEM_PROMPT).toContain('Summary record:');
     expect(CODEX_SYSTEM_PROMPT).toContain('summary.json');
     expect(CODEX_SYSTEM_PROMPT).toContain('"name"');
+    expect(CODEX_SYSTEM_PROMPT).toContain('"conclusion"');
     expect(CODEX_SYSTEM_PROMPT).toContain('"sources"');
+    expect(CODEX_SYSTEM_PROMPT).toContain('one short sentence in sentence case');
     expect(CODEX_SYSTEM_PROMPT).toContain('Do NOT put URLs in sources');
     // Old "Sources record" wording is gone (rolled into "Summary record").
     expect(CODEX_SYSTEM_PROMPT).not.toContain('Sources record:');

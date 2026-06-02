@@ -48,7 +48,8 @@ Plan record:
 - Plain JSON only. No Markdown fences, no extra files.
 
 Summary record:
-- After writing index.html, also write summary.json to the same directory containing { "name": string, "sources": [string, ...] }.
+- After writing index.html, also write summary.json to the same directory containing { "name": string, "conclusion": string, "sources": [string, ...] }.
+- "conclusion" is one short sentence in sentence case explaining what you built or changed for the user. It should be specific to the final widget, mention the most important capability or visible result, and end with a period. Examples: "Built a local weather view with current conditions and hourly context.", "Updated the market snapshot to show Bitcoin price, daily change, and refresh status."
 - "name" is a short (1-5 word) human-readable label for THE WIDGET ITSELF — what it is, not what it fetches. Title Case. Examples: "Local Weather", "Hacker News Top 5", "Bitcoin Price", "Pomodoro Timer", "City Clock". Do not include words like "widget" or "dashboard".
 - "sources" lists each data source the widget actually uses by short friendly name — e.g. "Open-Meteo", "Hacker News API", "Wikipedia REST", "GitHub REST API". Do NOT put URLs in sources. For a self-contained widget that fetches nothing (clock, countdown, static text), use an empty array.
 - summary.json is plain JSON only — no Markdown fences, no surrounding prose.

@@ -41,6 +41,14 @@ describe('ipc', () => {
     );
   });
 
+  it('uses Codex conclusion text when summary includes one', () => {
+    expect(completionSummaryText({
+      name: 'Local Weather',
+      conclusion: 'Built a local weather view with current conditions',
+      sources: ['Open-Meteo']
+    })).toBe('Built a local weather view with current conditions.');
+  });
+
   it('formats completion summary text with two sources', () => {
     expect(completionSummaryText({ name: 'Market Snapshot', sources: ['Yahoo Finance', 'Alpha Vantage'] })).toBe(
       'Market Snapshot is ready. Data from Yahoo Finance and Alpha Vantage.'
@@ -194,7 +202,7 @@ describe('ipc', () => {
     expect(sender.sent.filter((m) => m.channel === 'widget:plan')).toHaveLength(0);
   });
 
-  it('widget:create persists summary.json sidecar to meta.summary on success (with name)', async () => {
+  it('widget:create persists summary.json sidecar to meta.summary on success (with name and conclusion)', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);
     const secrets = createSecretsStore(root);
@@ -202,7 +210,11 @@ describe('ipc', () => {
     const sender = fakeSender();
     const runCodex = vi.fn(async ({ cwd }: any) => {
       await fs.writeFile(path.join(cwd, 'index.html'), '<html></html>');
-      await fs.writeFile(path.join(cwd, 'summary.json'), JSON.stringify({ name: 'Local Weather', sources: ['Open-Meteo'] }));
+      await fs.writeFile(path.join(cwd, 'summary.json'), JSON.stringify({
+        name: 'Local Weather',
+        conclusion: 'Built a local weather view with current conditions.',
+        sources: ['Open-Meteo']
+      }));
       return { ok: true };
     });
 
@@ -211,7 +223,11 @@ describe('ipc', () => {
     const { uuid } = await ipc.invoke('widget:create', 'show weather');
     await waitForSent(sender, { channel: 'widget:ready', payload: { uuid } });
 
-    expect((await store.getMeta(uuid)).summary).toEqual({ name: 'Local Weather', sources: ['Open-Meteo'] });
+    expect((await store.getMeta(uuid)).summary).toEqual({
+      name: 'Local Weather',
+      conclusion: 'Built a local weather view with current conditions.',
+      sources: ['Open-Meteo']
+    });
   });
 
   it('widget:create accepts legacy summary.json without name; whitespace-only name is dropped', async () => {
@@ -874,7 +890,11 @@ describe('ipc', () => {
       expect(prompt).toContain('Conversation history:');
       expect(prompt).toContain('show weather');
       await fs.writeFile(path.join(cwd, 'index.html'), '<html>weather</html>');
-      await fs.writeFile(path.join(cwd, 'summary.json'), JSON.stringify({ name: 'Local Weather', sources: ['Open-Meteo'] }));
+      await fs.writeFile(path.join(cwd, 'summary.json'), JSON.stringify({
+        name: 'Local Weather',
+        conclusion: 'Built a local weather view with current conditions.',
+        sources: ['Open-Meteo']
+      }));
       return { ok: true, path: path.join(cwd, 'index.html') };
     });
 
@@ -884,7 +904,7 @@ describe('ipc', () => {
     await waitForSent(sender, { channel: 'widget:ready', payload: { uuid } });
 
     const meta = await store.getMeta(uuid);
-    expect(meta.chat?.map((m) => m.text)).toEqual(['show weather', 'Local Weather is ready. Data from Open-Meteo.']);
+    expect(meta.chat?.map((m) => m.text)).toEqual(['show weather', 'Built a local weather view with current conditions.']);
     expect(sender.sent).toContainEqual({ channel: 'widget:ready', payload: { uuid } });
   });
 
@@ -945,7 +965,11 @@ describe('ipc', () => {
       await fs.writeFile(path.join(cwd, 'index.html'), '<html>new</html>');
       await fs.writeFile(
         path.join(cwd, 'summary.json'),
-        JSON.stringify({ name: 'Weather Radar', sources: ['Open-Meteo', 'RainViewer'] })
+        JSON.stringify({
+          name: 'Weather Radar',
+          conclusion: 'Updated the weather radar with rain bands and current conditions.',
+          sources: ['Open-Meteo', 'RainViewer']
+        })
       );
       return { ok: true, path: path.join(cwd, 'index.html') };
     });
@@ -961,7 +985,7 @@ describe('ipc', () => {
     expect(meta.chat?.map((m) => m.text)).toEqual([
       'make a clock',
       'make it blue',
-      'Weather Radar is ready. Data from Open-Meteo and RainViewer.'
+      'Updated the weather radar with rain bands and current conditions.'
     ]);
     expect(sender.sent).toContainEqual({ channel: 'widget:ready', payload: { uuid } });
   });
