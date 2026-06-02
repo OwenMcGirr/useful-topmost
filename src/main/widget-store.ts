@@ -8,6 +8,8 @@ export interface WidgetSummary {
   sources: string[];
   /** Short human-readable label Codex chose for the widget itself. */
   name?: string;
+  /** Short Codex-written sentence explaining what was built or changed. */
+  conclusion?: string;
 }
 
 export interface WidgetMeta {
