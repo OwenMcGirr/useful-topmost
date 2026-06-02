@@ -281,6 +281,121 @@ describe('ipc', () => {
     expect(bad.ok).toBe(false);
   });
 
+  it('startup:get returns the controller state', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+    const startup = {
+      getState: vi.fn(async () => ({ enabled: true, supported: true, platform: 'win32' })),
+      setEnabled: vi.fn()
+    };
+
+    registerIpc(
+      ipc as any,
+      store,
+      secrets,
+      createOnboardingStore(root),
+      runCodex as any,
+      () => sender as any,
+      createPrefsStore(root),
+      undefined,
+      startup as any
+    );
+
+    expect(await ipc.invoke('startup:get')).toEqual({ enabled: true, supported: true, platform: 'win32' });
+    expect(startup.getState).toHaveBeenCalled();
+  });
+
+  it('startup:setEnabled validates boolean input', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+    const startup = {
+      getState: vi.fn(),
+      setEnabled: vi.fn()
+    };
+
+    registerIpc(
+      ipc as any,
+      store,
+      secrets,
+      createOnboardingStore(root),
+      runCodex as any,
+      () => sender as any,
+      createPrefsStore(root),
+      undefined,
+      startup as any
+    );
+
+    expect(await ipc.invoke('startup:setEnabled', 'yes')).toEqual({ ok: false, error: 'enabled must be a boolean' });
+    expect(startup.setEnabled).not.toHaveBeenCalled();
+  });
+
+  it('startup:setEnabled delegates to the controller and returns the new state', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+    const startup = {
+      getState: vi.fn(),
+      setEnabled: vi.fn(async () => ({ enabled: true, supported: true, platform: 'darwin' }))
+    };
+
+    registerIpc(
+      ipc as any,
+      store,
+      secrets,
+      createOnboardingStore(root),
+      runCodex as any,
+      () => sender as any,
+      createPrefsStore(root),
+      undefined,
+      startup as any
+    );
+
+    expect(await ipc.invoke('startup:setEnabled', true)).toEqual({
+      ok: true,
+      state: { enabled: true, supported: true, platform: 'darwin' }
+    });
+    expect(startup.setEnabled).toHaveBeenCalledWith(true);
+  });
+
+  it('startup handlers return unavailable state when no controller is registered', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    expect(await ipc.invoke('startup:get')).toEqual({
+      enabled: false,
+      supported: false,
+      platform: process.platform,
+      error: 'startup settings are unavailable'
+    });
+    expect(await ipc.invoke('startup:setEnabled', true)).toEqual({
+      ok: false,
+      error: 'startup settings are unavailable',
+      state: {
+        enabled: false,
+        supported: false,
+        platform: process.platform,
+        error: 'startup settings are unavailable'
+      }
+    });
+  });
+
   it('widget:setRefreshTtl accepts a finite non-negative number; clears with null; rejects negatives and NaN', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);

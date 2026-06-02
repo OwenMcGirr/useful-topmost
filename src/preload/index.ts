@@ -5,6 +5,7 @@ import type { OnboardingState } from '../main/onboarding-store';
 import type { UpdateState } from '../main/updater';
 import type { WidgetSize, WidgetSummary } from '../main/widget-store';
 import type { LanServerState } from '../main/lan-server';
+import type { StartupState } from '../main/startup';
 
 export interface CodexStatus {
   installed: boolean;
@@ -130,6 +131,13 @@ const api = {
   lan: {
     getState: () => ipcRenderer.invoke('lan:getState') as Promise<LanServerState>
   },
+  startup: {
+    get: () => ipcRenderer.invoke('startup:get') as Promise<StartupState>,
+    setEnabled: (enabled: boolean) =>
+      ipcRenderer.invoke('startup:setEnabled', enabled) as Promise<
+        { ok: true; state: StartupState } | { ok: false; error: string; state?: StartupState }
+      >
+  },
   updates: {
     getState: () => ipcRenderer.invoke('update:getState') as Promise<UpdateState>,
     checkNow: () => ipcRenderer.invoke('update:checkNow') as Promise<UpdateState>,
@@ -145,4 +153,4 @@ const api = {
 contextBridge.exposeInMainWorld('api', api);
 
 export type Api = typeof api;
-export type { UpdateState, WidgetSize };
+export type { StartupState, UpdateState, WidgetSize };

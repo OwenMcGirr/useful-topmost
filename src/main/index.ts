@@ -11,6 +11,7 @@ import { runCodex } from './codex-runner';
 import { registerIpc } from './ipc';
 import { createUpdateController } from './updater';
 import { isExternalHttpUrl } from './external-links';
+import { createStartupController } from './startup';
 
 // Hand external http(s) URLs to the system default browser. Applied to both the
 // main window and every attached widget webview so:
@@ -114,8 +115,9 @@ app.whenReady().then(async () => {
   const onboarding = createOnboardingStore(userData);
   const prefs = createPrefsStore(userData);
   const lan = createLanServerController({ widgets: store, secrets });
+  const startup = createStartupController({ app });
   stopLanServer = () => lan.stop();
-  registerIpc(ipcMain, store, secrets, onboarding, runCodex, () => mainWindow!.webContents, prefs, lan);
+  registerIpc(ipcMain, store, secrets, onboarding, runCodex, () => mainWindow!.webContents, prefs, lan, startup);
   void prefs.get().then((p) => lan.applyConfig(p.lanServer));
 
   ipcMain.handle('app:codexStatus', () => checkCodexStatus());
