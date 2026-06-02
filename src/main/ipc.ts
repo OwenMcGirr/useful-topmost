@@ -7,6 +7,7 @@ import type { SecretsStore, Provider } from './secrets-store';
 import type { OnboardingStore } from './onboarding-store';
 import type { PrefsStore } from './prefs-store';
 import type { LanServerController } from './lan-server';
+import type { StartupController, StartupState } from './startup';
 import type { runCodex as RunCodexFn } from './codex-runner';
 import { PROVIDER_LOOKUP_OUTPUT_FILE, WIDGET_PLAN_OUTPUT_FILE, WIDGET_SUMMARY_OUTPUT_FILE, buildChatPrompt, buildPrompt, buildProviderLookupPrompt } from './codex-prompt';
 import { appFetch, filterProviders, injectAuth } from './proxy';
@@ -222,7 +223,8 @@ export function registerIpc(
   runCodex: typeof RunCodexFn,
   getSender: GetSender,
   prefs: PrefsStore,
-  lan?: LanServerController
+  lan?: LanServerController,
+  startup?: StartupController
 ): void {
   const inflight = new Map<string, AbortController>();
 
@@ -712,4 +714,32 @@ export function registerIpc(
 
   ipcMain.handle('lan:getState', async () =>
     lan?.getState() ?? { running: false, port: 32177, urls: [] });
+
+  const unavailableStartupState = (): StartupState => ({
+    enabled: false,
+    supported: false,
+    platform: process.platform,
+    error: 'startup settings are unavailable'
+  });
+
+  ipcMain.handle('startup:get', async () =>
+    startup ? startup.getState() : unavailableStartupState());
+
+  ipcMain.handle('startup:setEnabled', async (_event, enabled: unknown) => {
+    if (typeof enabled !== 'boolean') {
+      return { ok: false as const, error: 'enabled must be a boolean' };
+    }
+    if (!startup) {
+      return {
+        ok: false as const,
+        error: 'startup settings are unavailable',
+        state: unavailableStartupState()
+      };
+    }
+    const state = await startup.setEnabled(enabled);
+    if (state.error) {
+      return { ok: false as const, error: state.error, state };
+    }
+    return { ok: true as const, state };
+  });
 }

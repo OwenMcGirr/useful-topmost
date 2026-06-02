@@ -28,6 +28,10 @@ function mockApi(initial: any[] = []) {
       setGeekMode: vi.fn(async () => ({ ok: true })),
       setLanServer: vi.fn(async () => ({ ok: true }))
     },
+    startup: {
+      get: vi.fn(async () => ({ enabled: false, supported: true, platform: 'win32' })),
+      setEnabled: vi.fn(async (enabled: boolean) => ({ ok: true, state: { enabled, supported: true, platform: 'win32' } }))
+    },
     lan: {
       getState: vi.fn(async () => ({ running: false, port: 32177, urls: [] }))
     }
@@ -39,6 +43,10 @@ beforeEach(() => {
   (window as any).api = undefined;
 });
 
+async function openApiProviders() {
+  await userEvent.click(await screen.findByRole('button', { name: /api providers/i }));
+}
+
 describe('SettingsModal', () => {
   it('renders nothing when open is false', () => {
     const { api } = mockApi();
@@ -47,14 +55,42 @@ describe('SettingsModal', () => {
     expect(container.textContent).toBe('');
   });
 
-  it('shows Settings and defaults to API Providers', async () => {
+  it('shows Settings and defaults to General', async () => {
     const { api } = mockApi([]);
     (window as any).api = api;
     render(<SettingsModal open={true} onClose={() => {}} />);
 
     expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /api providers/i })).toHaveAttribute('aria-current', 'page');
-    expect(await screen.findByText(/no providers yet/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^general$/i })).toHaveAttribute('aria-current', 'page');
+    expect(await screen.findByLabelText(/start with system/i)).toBeInTheDocument();
+  });
+
+  it('General section toggles Start with system through the startup API', async () => {
+    const { api } = mockApi([]);
+    (window as any).api = api;
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    const checkbox = await screen.findByLabelText(/start with system/i) as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+
+    await userEvent.click(checkbox);
+
+    await waitFor(() => expect(api.startup.setEnabled).toHaveBeenCalledWith(true));
+    expect(checkbox.checked).toBe(true);
+  });
+
+  it('General section rolls back Start with system when saving fails', async () => {
+    const { api } = mockApi([]);
+    api.startup.setEnabled = vi.fn(async () => ({ ok: false, error: 'permission denied' })) as any;
+    (window as any).api = api;
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    const checkbox = await screen.findByLabelText(/start with system/i) as HTMLInputElement;
+    await userEvent.click(checkbox);
+
+    await waitFor(() => expect(api.startup.setEnabled).toHaveBeenCalledWith(true));
+    await waitFor(() => expect(checkbox.checked).toBe(false));
+    expect(await screen.findByRole('alert')).toHaveTextContent('permission denied.');
   });
 
   it('lists existing providers by name', async () => {
@@ -65,6 +101,7 @@ describe('SettingsModal', () => {
     }]);
     (window as any).api = api;
     render(<SettingsModal open={true} onClose={() => {}} />);
+    await openApiProviders();
     expect(await screen.findByText('OpenWeather')).toBeInTheDocument();
   });
 
@@ -72,6 +109,7 @@ describe('SettingsModal', () => {
     const { api } = mockApi([]);
     (window as any).api = api;
     render(<SettingsModal open={true} onClose={() => {}} />);
+    await openApiProviders();
 
     await userEvent.click(await screen.findByRole('button', { name: /add provider/i }));
     await userEvent.type(screen.getByLabelText(/^name$/i), 'OpenWeather');
@@ -96,6 +134,7 @@ describe('SettingsModal', () => {
     const { api } = mockApi([]);
     (window as any).api = api;
     render(<SettingsModal open={true} onClose={() => {}} />);
+    await openApiProviders();
     await userEvent.click(await screen.findByRole('button', { name: /add provider/i }));
 
     await userEvent.selectOptions(screen.getByLabelText(/auth type/i), 'header');
@@ -109,6 +148,7 @@ describe('SettingsModal', () => {
     const { api } = mockApi([]);
     (window as any).api = api;
     render(<SettingsModal open={true} onClose={() => {}} />);
+    await openApiProviders();
 
     await userEvent.click(await screen.findByRole('button', { name: /add provider/i }));
     await userEvent.type(screen.getByLabelText(/^name$/i), 'Auth Provider');
@@ -128,6 +168,7 @@ describe('SettingsModal', () => {
     const { api } = mockApi([]);
     (window as any).api = api;
     render(<SettingsModal open={true} onClose={() => {}} />);
+    await openApiProviders();
 
     await userEvent.click(await screen.findByRole('button', { name: /add provider/i }));
     await userEvent.type(screen.getByLabelText(/^name$/i), 'Auth Provider');
@@ -155,6 +196,7 @@ describe('SettingsModal', () => {
     })) as any;
     (window as any).api = api;
     render(<SettingsModal open={true} onClose={() => {}} />);
+    await openApiProviders();
 
     await userEvent.click(await screen.findByRole('button', { name: /add provider/i }));
     await userEvent.type(screen.getByLabelText(/describe an api/i), 'Stripe');
@@ -209,6 +251,7 @@ describe('SettingsModal', () => {
     })) as any;
     (window as any).api = api;
     render(<SettingsModal open={true} onClose={() => {}} />);
+    await openApiProviders();
 
     await userEvent.click(await screen.findByRole('button', { name: /add provider/i }));
     await userEvent.type(screen.getByLabelText(/describe an api/i), 'Stripe');
@@ -232,6 +275,7 @@ describe('SettingsModal', () => {
     })) as any;
     (window as any).api = api;
     render(<SettingsModal open={true} onClose={() => {}} />);
+    await openApiProviders();
 
     await userEvent.click(await screen.findByRole('button', { name: /add provider/i }));
     await userEvent.type(screen.getByLabelText(/describe an api/i), 'OpenWeather');
@@ -249,6 +293,7 @@ describe('SettingsModal', () => {
     })) as any;
     (window as any).api = api;
     render(<SettingsModal open={true} onClose={() => {}} />);
+    await openApiProviders();
 
     await userEvent.click(await screen.findByRole('button', { name: /add provider/i }));
     await userEvent.type(screen.getByLabelText(/describe an api/i), 'made-up');
@@ -265,6 +310,7 @@ describe('SettingsModal', () => {
     }]);
     (window as any).api = api;
     render(<SettingsModal open={true} onClose={() => {}} />);
+    await openApiProviders();
 
     await userEvent.click(await screen.findByRole('button', { name: /edit/i }));
 
@@ -280,6 +326,7 @@ describe('SettingsModal', () => {
     }]);
     (window as any).api = api;
     render(<SettingsModal open={true} onClose={() => {}} />);
+    await openApiProviders();
 
     await userEvent.click(await screen.findByRole('button', { name: /edit/i }));
 
@@ -290,6 +337,7 @@ describe('SettingsModal', () => {
     const { api } = mockApi([]);
     (window as any).api = api;
     render(<SettingsModal open={true} onClose={() => {}} />);
+    await openApiProviders();
     await userEvent.click(await screen.findByRole('button', { name: /add provider/i }));
 
     await userEvent.type(screen.getByLabelText(/hostnames/i), 'api.x.com');
@@ -309,6 +357,7 @@ describe('SettingsModal', () => {
     }]);
     (window as any).api = api;
     render(<SettingsModal open={true} onClose={() => {}} />);
+    await openApiProviders();
 
     await userEvent.click(await screen.findByRole('button', { name: /edit/i }));
 
@@ -326,6 +375,7 @@ describe('SettingsModal', () => {
     api.secrets.test = vi.fn(async (_id: string) => ({ ok: true, status: 200 })) as any;
     (window as any).api = api;
     render(<SettingsModal open={true} onClose={() => {}} />);
+    await openApiProviders();
 
     const row = (await screen.findByText('X')).closest('[data-row]') as HTMLElement;
     await userEvent.click(within(row).getByRole('button', { name: /^test$/i }));
@@ -342,6 +392,7 @@ describe('SettingsModal', () => {
     api.secrets.test = vi.fn(async (_id: string) => ({ ok: true, status: 401 })) as any;
     (window as any).api = api;
     render(<SettingsModal open={true} onClose={() => {}} />);
+    await openApiProviders();
 
     const row = (await screen.findByText('X')).closest('[data-row]') as HTMLElement;
     await userEvent.click(within(row).getByRole('button', { name: /^test$/i }));
@@ -356,6 +407,7 @@ describe('SettingsModal', () => {
     }]);
     (window as any).api = api;
     render(<SettingsModal open={true} onClose={() => {}} />);
+    await openApiProviders();
 
     const row = (await screen.findByText('X')).closest('[data-row]') as HTMLElement;
     await userEvent.click(within(row).getByRole('button', { name: /delete/i }));

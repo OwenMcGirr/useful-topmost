@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import type { UpdateState } from '../preload';
 import ApiProvidersSettings from './ApiProvidersSettings';
 import GeekModeSettings from './GeekModeSettings';
+import GeneralSettings from './GeneralSettings';
 import LanSettings from './LanSettings';
 import UpdateSettings from './UpdateSettings';
 import WidgetsSettings from './WidgetsSettings';
 import { BTN } from './settingsStyles';
 
-type Section = 'providers' | 'widgets' | 'lan' | 'geek' | 'updates';
+type Section = 'general' | 'providers' | 'widgets' | 'lan' | 'geek' | 'updates';
 
 interface Props {
   open: boolean;
@@ -98,7 +99,7 @@ export default function SettingsModal({
   addProviderSeedQuery = null,
   onAddProviderConsumed = () => {}
 }: Props) {
-  const [section, setSection] = useState<Section>('providers');
+  const [section, setSection] = useState<Section>('general');
 
   useEffect(() => {
     if (open && addProviderSeedQuery) setSection('providers');
@@ -115,6 +116,13 @@ export default function SettingsModal({
         </div>
         <div style={BODY}>
           <nav aria-label="Settings sections" style={SIDEBAR}>
+            <button
+              style={sidebarButton(section === 'general')}
+              aria-current={section === 'general' ? 'page' : undefined}
+              onClick={() => setSection('general')}
+            >
+              General
+            </button>
             <button
               style={sidebarButton(section === 'providers')}
               aria-current={section === 'providers' ? 'page' : undefined}
@@ -152,6 +160,7 @@ export default function SettingsModal({
             </button>
           </nav>
           <div style={CONTENT}>
+            {section === 'general' && <GeneralSettings />}
             {section === 'providers' && (
               <ApiProvidersSettings
                 seedLookupQuery={addProviderSeedQuery}
