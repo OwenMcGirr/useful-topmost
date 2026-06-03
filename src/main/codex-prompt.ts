@@ -52,14 +52,14 @@ Avoid:
 
 Data:
 - Prefer keyless public APIs (Open-Meteo for weather, Wikipedia, public RSS, public GitHub endpoints, etc.).
-- For network data that can be reused, wrap the fetch in window.cache.get(key, fetcher). The app owns the user's refresh cadence at runtime, so do not hard-code refresh intervals into the widget:
+- For network data that can be reused, wrap the fetch in window.cache.get(key, fetcher). The app and shared LAN UI reload widget frames according to the user's refresh setting, so do not hard-code refresh intervals or implement data-refresh timers inside the widget:
     const data = await window.cache.get("weather", async () => {
       const r = await window.appFetch("https://api.open-meteo.com/...");
       return await r.json();
     });
   The app persists this cache per-widget on disk, so when the dashboard shuffles a tile out and back in (or the app restarts) the cached value can be returned without re-fetching until the user's refresh setting expires it.
 - Use a stable string key per data source ("weather", "top-stories"). If you change the SHAPE of the cached value in a chat edit, bump the key (e.g. "weather-v2") to avoid stale-shape reads.
-- Use setInterval only for purely visual ticking (countdown clock, blinking cursor) that does not perform a fetch.
+- Use setInterval only for visual ticking such as clocks, countdowns, blinking cursors, and animations.
 
 Local commands:
 - For explicit local CLI tasks, use window.local.exec(command, args). Pass the executable name as command and each argument as a separate string in args; do not build shell command strings.

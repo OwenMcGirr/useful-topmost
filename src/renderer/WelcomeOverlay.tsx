@@ -100,7 +100,7 @@ export default function WelcomeOverlay({ onDismiss, onUseExample }: Props) {
           Hit the green <strong>+</strong> button (bottom-right) and tell it what
           widget you want — a clock, a stock ticker, your GitHub run status.
           Codex writes the code; this app runs it in a sandboxed tile that
-          refreshes itself.
+          refreshes on your selected cadence.
         </p>
         <p style={CHIP_LABEL}>Try one of these</p>
         <div style={CHIP_LIST}>

@@ -4,8 +4,9 @@ A frameless full-screen Electron dashboard where each widget is generated
 on the fly by the [OpenAI Codex CLI][codex-cli]. You type a prompt at the
 `+` button — "show me my city's weather", "Bitcoin price ticker",
 "countdown to my next meeting" — and Codex writes a self-contained HTML
-widget that renders in a sandboxed `<webview>` tile and refreshes itself
-on its own interval. The dashboard persists across restarts.
+widget that renders in a sandboxed `<webview>` tile. The app reloads
+the tile on the selected cadence, and the dashboard
+persists across restarts.
 
 The product hypothesis: instead of building or installing widgets, the
 user *describes* what they want to see and the system writes the widget
@@ -72,12 +73,12 @@ this. File an issue if you do.
    `userData/widgets/{uuid}/` and pipes the prompt to stdin. The system
    prompt instructs Codex to write a single self-contained `index.html`
    with inline JS/CSS, prefer keyless public APIs (Open-Meteo,
-   Wikipedia, public RSS, GitHub public endpoints), and bake an
-   appropriate `setInterval` for self-refresh.
+   Wikipedia, public RSS, GitHub public endpoints), and use
+   `window.cache.get(...)` for reusable network data.
 4. Main polls for `index.html` to appear and resolves the moment it
    does. The renderer flips the tile from `building` to `live` and
-   points an Electron `<webview>` at the file. The widget's inline JS
-   takes over and refreshes itself on its own schedule.
+   points an Electron `<webview>` at the file. The app reloads the
+   webview according to the widget's refresh cadence.
 
 ### Persistence
 
@@ -112,8 +113,8 @@ follow-up.
 
 ### Re-prompt and retry
 
-- **Refresh** (on a live tile) reloads the webview. The widget's inline
-  fetch re-runs.
+- **Refresh** (on a live tile) reloads the webview immediately. Automatic
+  refresh also reloads widget frames according to the selected cadence.
 - **Re-prompt** opens the modal pre-filled with the original prompt; on
   submit, a new widget is generated and the old one is dropped *only
   once the new one is ready*. If the new generation fails, the old

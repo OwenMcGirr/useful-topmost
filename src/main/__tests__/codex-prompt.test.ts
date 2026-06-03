@@ -94,8 +94,9 @@ describe('codex-prompt', () => {
 
   it('instructs Codex to use app-owned runtime refresh cadence for cached fetches', () => {
     expect(CODEX_SYSTEM_PROMPT).toContain('window.cache.get(key, fetcher)');
-    expect(CODEX_SYSTEM_PROMPT).toContain("The app owns the user's refresh cadence at runtime");
+    expect(CODEX_SYSTEM_PROMPT).toContain('The app and shared LAN UI reload widget frames');
     expect(CODEX_SYSTEM_PROMPT).toContain('do not hard-code refresh intervals');
+    expect(CODEX_SYSTEM_PROMPT).toContain('implement data-refresh timers inside the widget');
     expect(CODEX_SYSTEM_PROMPT).toContain('persists this cache per-widget on disk');
     expect(CODEX_SYSTEM_PROMPT).toContain('bump the key');
     expect(CODEX_SYSTEM_PROMPT).not.toContain('window.cache.get(key, ttlMs, fetcher)');

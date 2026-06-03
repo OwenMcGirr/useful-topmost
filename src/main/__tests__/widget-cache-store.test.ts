@@ -11,13 +11,13 @@ async function freshDir(): Promise<string> {
 describe('widget-cache-store', () => {
   it('getCacheEntry returns null when cache.json does not exist', async () => {
     const dir = await freshDir();
-    expect(await getCacheEntry(dir, 'k')).toBeNull();
+    expect(await getCacheEntry(dir, 'k', 60_000)).toBeNull();
   });
 
   it('writeCacheEntry persists; getCacheEntry returns it; readCache surfaces it', async () => {
     const dir = await freshDir();
     await writeCacheEntry(dir, 'weather', { temp: 17 }, 60_000);
-    const entry = await getCacheEntry(dir, 'weather');
+    const entry = await getCacheEntry(dir, 'weather', 60_000);
     expect(entry).not.toBeNull();
     expect(entry!.value).toEqual({ temp: 17 });
     expect(entry!.expiresAt).toBeGreaterThan(Date.now());
@@ -41,14 +41,14 @@ describe('widget-cache-store', () => {
     await fs.writeFile(path.join(dir, 'cache.json'), JSON.stringify({
       stale: { value: 'old', expiresAt: Date.now() - 1000 }
     }));
-    expect(await getCacheEntry(dir, 'stale')).toBeNull();
+    expect(await getCacheEntry(dir, 'stale', 60_000)).toBeNull();
   });
 
   it('corrupt cache.json is treated as empty without throwing', async () => {
     const dir = await freshDir();
     await fs.writeFile(path.join(dir, 'cache.json'), 'not json');
     expect(await readCache(dir)).toEqual({});
-    expect(await getCacheEntry(dir, 'k')).toBeNull();
+    expect(await getCacheEntry(dir, 'k', 60_000)).toBeNull();
   });
 
   it('writeCacheEntry with ttlMs <= 0 is a no-op', async () => {
