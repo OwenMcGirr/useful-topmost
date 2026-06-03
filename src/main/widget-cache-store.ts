@@ -3,7 +3,8 @@ import path from 'node:path';
 
 export interface CacheEntry {
   value: unknown;
-  expiresAt: number;
+  fetchedAt?: number;
+  expiresAt?: number;
 }
 
 const FILE_NAME = 'cache.json';
@@ -19,8 +20,12 @@ export async function readCache(widgetDir: string): Promise<Record<string, Cache
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
     const out: Record<string, CacheEntry> = {};
     for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-      if (value && typeof value === 'object' && 'value' in (value as object) && typeof (value as any).expiresAt === 'number') {
-        out[key] = { value: (value as any).value, expiresAt: (value as any).expiresAt };
+      if (value && typeof value === 'object' && 'value' in (value as object)) {
+        const fetchedAt = typeof (value as any).fetchedAt === 'number' ? (value as any).fetchedAt : undefined;
+        const expiresAt = typeof (value as any).expiresAt === 'number' ? (value as any).expiresAt : undefined;
+        if (fetchedAt !== undefined || expiresAt !== undefined) {
+          out[key] = { value: (value as any).value, fetchedAt, expiresAt };
+        }
       }
     }
     return out;
@@ -29,11 +34,16 @@ export async function readCache(widgetDir: string): Promise<Record<string, Cache
   }
 }
 
-export async function getCacheEntry(widgetDir: string, key: string): Promise<CacheEntry | null> {
+export async function getCacheEntry(widgetDir: string, key: string, ttlMs: number): Promise<CacheEntry | null> {
+  if (ttlMs <= 0) return null;
   const cache = await readCache(widgetDir);
   const entry = cache[key];
   if (!entry) return null;
-  if (entry.expiresAt <= Date.now()) return null;
+  if (entry.fetchedAt !== undefined) {
+    if (entry.fetchedAt + ttlMs <= Date.now()) return null;
+    return entry;
+  }
+  if (entry.expiresAt === undefined || entry.expiresAt <= Date.now()) return null;
   return entry;
 }
 
@@ -44,7 +54,8 @@ export async function writeCacheEntry(
   ttlMs: number
 ): Promise<void> {
   if (ttlMs <= 0) return;
+  const now = Date.now();
   const cache = await readCache(widgetDir);
-  cache[key] = { value, expiresAt: Date.now() + ttlMs };
+  cache[key] = { value, fetchedAt: now, expiresAt: now + ttlMs };
   await fs.writeFile(cachePath(widgetDir), JSON.stringify(cache, null, 2));
 }

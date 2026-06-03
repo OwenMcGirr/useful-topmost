@@ -126,16 +126,26 @@ contextBridge.exposeInMainWorld('local', {
     ipcRenderer.invoke('app:exec', command, args) as Promise<LocalExecResult>
 });
 
-interface CacheEntry { value: unknown; expiresAt: number }
+interface CacheEntry { value: unknown; fetchedAt?: number; expiresAt?: number }
 
-async function cacheGet<T>(key: string, ttlMs: number, fetcher: () => Promise<T>): Promise<T> {
-  if (typeof key === 'string' && key.length > 0 && ttlMs > 0) {
-    const cached = await ipcRenderer.invoke('app:cache:get', key) as CacheEntry | null;
+async function cacheGet<T>(
+  key: string,
+  ttlOrFetcher: number | (() => Promise<T>),
+  maybeFetcher?: () => Promise<T>
+): Promise<T> {
+  const requestedTtlMs = typeof ttlOrFetcher === 'number' ? ttlOrFetcher : undefined;
+  const fetcher = typeof ttlOrFetcher === 'function' ? ttlOrFetcher : maybeFetcher;
+  if (typeof fetcher !== 'function') {
+    throw new TypeError('window.cache.get requires a fetcher');
+  }
+
+  if (typeof key === 'string' && key.length > 0) {
+    const cached = await ipcRenderer.invoke('app:cache:get', key, requestedTtlMs) as CacheEntry | null;
     if (cached) return cached.value as T;
   }
   const fresh = await fetcher();
-  if (typeof key === 'string' && key.length > 0 && ttlMs > 0) {
-    try { await ipcRenderer.invoke('app:cache:set', key, fresh, ttlMs); }
+  if (typeof key === 'string' && key.length > 0) {
+    try { await ipcRenderer.invoke('app:cache:set', key, fresh, requestedTtlMs); }
     catch { /* fresh value still returned; swallow */ }
   }
   return fresh;
