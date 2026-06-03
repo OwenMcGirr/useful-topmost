@@ -10,6 +10,7 @@
     "package:win": "npm run build && electron-builder --win nsis --publish never",
     "package:linux": "npm run build && electron-builder --linux AppImage deb --publish never",
     "icon": "node scripts/build-icon.js",
+    "winget:manifest": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/winget-manifest.ps1",
     "test": "vitest run",
     "test:watch": "vitest"
   },
