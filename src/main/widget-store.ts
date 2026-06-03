@@ -30,8 +30,8 @@ export interface WidgetMeta {
    */
   summary?: WidgetSummary;
   /**
-   * Refresh cadence in milliseconds. Passed to Codex so cache.get calls use
-   * this exact TTL. Undefined means "let Codex decide" (pre-existing widgets).
+   * Refresh cadence in milliseconds. The app runtime applies this to widget
+   * cache reads. Undefined falls back to generated-code TTLs for BC.
    * 0 means "Live" — bypass the cache.
    */
   refreshTtlMs?: number;

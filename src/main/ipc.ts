@@ -9,7 +9,7 @@ import type { PrefsStore } from './prefs-store';
 import type { LanServerController } from './lan-server';
 import type { StartupController, StartupState } from './startup';
 import type { runCodex as RunCodexFn } from './codex-runner';
-import { PROVIDER_LOOKUP_OUTPUT_FILE, WIDGET_PLAN_OUTPUT_FILE, WIDGET_SUMMARY_OUTPUT_FILE, buildChatPrompt, buildPrompt, buildProviderLookupPrompt } from './codex-prompt';
+import { DEFAULT_REFRESH_TTL_MS, PROVIDER_LOOKUP_OUTPUT_FILE, WIDGET_PLAN_OUTPUT_FILE, WIDGET_SUMMARY_OUTPUT_FILE, buildChatPrompt, buildPrompt, buildProviderLookupPrompt } from './codex-prompt';
 import { appFetch, filterProviders, injectAuth } from './proxy';
 import { runLocalExec, widgetCwdFromSenderUrl } from './local-exec';
 import { getCacheEntry, writeCacheEntry } from './widget-cache-store';
@@ -49,6 +49,10 @@ function validateProvider(p: any): SaveResultErr | null {
   }
   if (typeof p.value !== 'string') return { ok: false, error: 'value must be a string' };
   return null;
+}
+
+function validRequestedTtl(ttlMs: unknown): number | undefined {
+  return typeof ttlMs === 'number' && Number.isFinite(ttlMs) && ttlMs >= 0 ? ttlMs : undefined;
 }
 
 export interface ProviderLookupResultOk {
@@ -315,7 +319,7 @@ export function registerIpc(
       });
       const providers = filterProviders(await secrets.list(), selectedProviderIds);
       const result = await runCodex({
-        prompt: buildPrompt(prompt, providers, refreshTtlMs),
+        prompt: buildPrompt(prompt, providers),
         cwd: widgets.dir(uuid),
         logPath: widgets.logPath(uuid),
         signal: controller.signal
@@ -359,7 +363,7 @@ export function registerIpc(
       const meta = await widgets.getMeta(uuid);
       const providers = filterProviders(await secrets.list(), meta.selectedProviderIds);
       const result = await runCodex({
-        prompt: buildChatPrompt({ messages: meta.chat ?? [], providers, refreshTtlMs: meta.refreshTtlMs }),
+        prompt: buildChatPrompt({ messages: meta.chat ?? [], providers }),
         cwd: widgets.dir(uuid),
         logPath: widgets.logPath(uuid),
         signal: controller.signal
@@ -414,7 +418,7 @@ export function registerIpc(
         const providers = filterProviders(await secrets.list(), meta.selectedProviderIds);
         const currentHtml = await widgets.readWidgetHtml(uuid);
         const result = await runCodex({
-          prompt: buildChatPrompt({ messages: meta.chat ?? [], currentHtml, providers, refreshTtlMs: meta.refreshTtlMs }),
+          prompt: buildChatPrompt({ messages: meta.chat ?? [], currentHtml, providers }),
           cwd: stagingDir,
           logPath: path.join(stagingDir, 'codex.log'),
           signal: controller.signal
@@ -688,22 +692,37 @@ export function registerIpc(
     return runLocalExec({ command, args }, { cwd });
   });
 
-  ipcMain.handle('app:cache:get', async (event, key: unknown) => {
+  const cacheContext = async (senderUrl: string, requestedTtlMs: unknown) => {
+    const cwd = widgetCwdFromSenderUrl(senderUrl, widgets.widgetsRoot());
+    if (!cwd) return null;
+    const uuid = path.basename(cwd);
+    try {
+      const meta = await widgets.getMeta(uuid);
+      const ttlMs = meta.refreshTtlMs ?? validRequestedTtl(requestedTtlMs) ?? DEFAULT_REFRESH_TTL_MS;
+      return { cwd, ttlMs };
+    } catch {
+      return null;
+    }
+  };
+
+  ipcMain.handle('app:cache:get', async (event, key: unknown, requestedTtlMs?: unknown) => {
     const cwd = widgetCwdFromSenderUrl(event.senderFrame?.url ?? '', widgets.widgetsRoot());
     if (!cwd) return null;
     if (typeof key !== 'string' || !key) return null;
-    return getCacheEntry(cwd, key);
+    const context = await cacheContext(event.senderFrame?.url ?? '', requestedTtlMs);
+    if (!context) return null;
+    return getCacheEntry(context.cwd, key, context.ttlMs);
   });
 
-  ipcMain.handle('app:cache:set', async (event, key: unknown, value: unknown, ttlMs: unknown) => {
-    const cwd = widgetCwdFromSenderUrl(event.senderFrame?.url ?? '', widgets.widgetsRoot());
-    if (!cwd) return { ok: false as const, error: 'cache is only available to widget files' };
+  ipcMain.handle('app:cache:set', async (event, key: unknown, value: unknown, requestedTtlMs?: unknown) => {
+    const context = await cacheContext(event.senderFrame?.url ?? '', requestedTtlMs);
+    if (!context) return { ok: false as const, error: 'cache is only available to widget files' };
     if (typeof key !== 'string' || !key) return { ok: false as const, error: 'key must be a non-empty string' };
-    if (typeof ttlMs !== 'number' || !Number.isFinite(ttlMs)) {
-      return { ok: false as const, error: 'ttlMs must be a finite number' };
+    if (context.ttlMs <= 0) {
+      return { ok: true as const };
     }
     try {
-      await writeCacheEntry(cwd, key, value, ttlMs);
+      await writeCacheEntry(context.cwd, key, value, context.ttlMs);
       return { ok: true as const };
     } catch (e: any) {
       return { ok: false as const, error: e?.message ?? 'cache write failed' };

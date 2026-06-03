@@ -52,12 +52,12 @@ Avoid:
 
 Data:
 - Prefer keyless public APIs (Open-Meteo for weather, Wikipedia, public RSS, public GitHub endpoints, etc.).
-- For any data with a natural refresh cadence (every 10 minutes, hourly, daily), wrap the fetch in window.cache.get(key, ttlMs, fetcher):
-    const data = await window.cache.get("weather", 60 * 60 * 1000, async () => {
+- For network data that can be reused, wrap the fetch in window.cache.get(key, fetcher). The app owns the user's refresh cadence at runtime, so do not hard-code refresh intervals into the widget:
+    const data = await window.cache.get("weather", async () => {
       const r = await window.appFetch("https://api.open-meteo.com/...");
       return await r.json();
     });
-  The app persists this cache per-widget on disk, so when the dashboard shuffles a tile out and back in (or the app restarts) the cached value is returned without re-fetching until the TTL expires.
+  The app persists this cache per-widget on disk, so when the dashboard shuffles a tile out and back in (or the app restarts) the cached value can be returned without re-fetching until the user's refresh setting expires it.
 - Use a stable string key per data source ("weather", "top-stories"). If you change the SHAPE of the cached value in a chat edit, bump the key (e.g. "weather-v2") to avoid stale-shape reads.
 - Use setInterval only for purely visual ticking (countdown clock, blinking cursor) that does not perform a fetch.
 
@@ -148,19 +148,13 @@ export function labelForTtl(ttlMs: number): string {
   return preset ? preset.label : `${ttlMs} ms`;
 }
 
-function refreshBlock(ttlMs: number | undefined): string {
-  if (ttlMs === undefined) return '';
-  return (
-    `Refresh cadence: ${labelForTtl(ttlMs)} (use ttlMs = ${ttlMs} in your window.cache.get calls). Honor this exact value.\n\n`
-  );
-}
-
 export function buildPrompt(
   userPrompt: string,
   providers: PublicProviderForPrompt[] = [],
   refreshTtlMs?: number
 ): string {
-  return CODEX_SYSTEM_PROMPT + providersBlock(providers) + refreshBlock(refreshTtlMs) + "The user's request:\n" + userPrompt;
+  void refreshTtlMs;
+  return CODEX_SYSTEM_PROMPT + providersBlock(providers) + "The user's request:\n" + userPrompt;
 }
 
 export const PROVIDER_LOOKUP_OUTPUT_FILE = 'provider.json';
@@ -218,6 +212,7 @@ export function buildChatPrompt({
   providers = [],
   refreshTtlMs
 }: BuildChatPromptOptions): string {
+  void refreshTtlMs;
   const userMessages = messages.filter((m) => m.role === 'user');
   const latest = userMessages[userMessages.length - 1]?.text ?? '';
   const history = userMessages
@@ -236,7 +231,6 @@ export function buildChatPrompt({
   return [
     CODEX_SYSTEM_PROMPT,
     providersBlock(providers),
-    refreshBlock(refreshTtlMs),
     'Conversation history:',
     history || '(none)',
     '',

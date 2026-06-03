@@ -66,22 +66,25 @@ describe('codex-prompt', () => {
     expect(labelForTtl(0)).toBe('Live');
   });
 
-  it('buildPrompt with refreshTtlMs adds the cadence directive; without it the line is absent', () => {
+  it('does not inject refresh cadence into generated widget prompts', () => {
     const withTtl = buildPrompt('show weather', [], 3_600_000);
-    expect(withTtl).toContain('Refresh cadence: 1 hour (use ttlMs = 3600000 in your window.cache.get calls)');
-    expect(withTtl).toContain('Honor this exact value.');
+    expect(withTtl).not.toContain('Refresh cadence:');
+    expect(withTtl).not.toContain('Honor this exact value');
+    expect(withTtl).not.toContain('use ttlMs =');
 
     const without = buildPrompt('show weather', []);
     expect(without).not.toContain('Refresh cadence:');
     expect(without).not.toContain('Honor this exact value.');
   });
 
-  it('buildChatPrompt with refreshTtlMs adds the cadence directive', () => {
+  it('does not inject refresh cadence into generated widget chat prompts', () => {
     const withTtl = buildChatPrompt({
       messages: [{ id: 'm1', role: 'user', text: 'tweak', created_at: '' }],
       refreshTtlMs: 86_400_000
     });
-    expect(withTtl).toContain('Refresh cadence: Daily (use ttlMs = 86400000');
+    expect(withTtl).not.toContain('Refresh cadence:');
+    expect(withTtl).not.toContain('Honor this exact value');
+    expect(withTtl).not.toContain('use ttlMs =');
 
     const without = buildChatPrompt({
       messages: [{ id: 'm1', role: 'user', text: 'tweak', created_at: '' }]
@@ -89,10 +92,16 @@ describe('codex-prompt', () => {
     expect(without).not.toContain('Refresh cadence:');
   });
 
-  it('instructs Codex to use window.cache.get for cadenced fetches', () => {
-    expect(CODEX_SYSTEM_PROMPT).toContain('window.cache.get(key, ttlMs, fetcher)');
+  it('instructs Codex to use app-owned runtime refresh cadence for cached fetches', () => {
+    expect(CODEX_SYSTEM_PROMPT).toContain('window.cache.get(key, fetcher)');
+    expect(CODEX_SYSTEM_PROMPT).toContain("The app owns the user's refresh cadence at runtime");
+    expect(CODEX_SYSTEM_PROMPT).toContain('do not hard-code refresh intervals');
     expect(CODEX_SYSTEM_PROMPT).toContain('persists this cache per-widget on disk');
     expect(CODEX_SYSTEM_PROMPT).toContain('bump the key');
+    expect(CODEX_SYSTEM_PROMPT).not.toContain('window.cache.get(key, ttlMs, fetcher)');
+    expect(CODEX_SYSTEM_PROMPT).not.toContain('Refresh cadence:');
+    expect(CODEX_SYSTEM_PROMPT).not.toContain('Honor this exact value');
+    expect(CODEX_SYSTEM_PROMPT).not.toContain('use ttlMs =');
     // The old "bake it into a setInterval" line is gone (cache replaces it).
     expect(CODEX_SYSTEM_PROMPT).not.toContain('bake it into a setInterval');
   });

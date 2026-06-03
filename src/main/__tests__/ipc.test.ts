@@ -478,7 +478,7 @@ describe('ipc', () => {
     expect(str.ok).toBe(false);
   });
 
-  it('widget:create with refreshTtlMs persists it and includes the cadence directive in the prompt', async () => {
+  it('widget:create with refreshTtlMs persists it without adding a cadence directive to the prompt', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);
     const secrets = createSecretsStore(root);
@@ -498,10 +498,37 @@ describe('ipc', () => {
     await new Promise((r) => setTimeout(r, 20));
 
     expect((await store.getMeta(uuid)).refreshTtlMs).toBe(86_400_000);
-    expect(capturedPrompt).toContain('Refresh cadence: Daily (use ttlMs = 86400000');
+    expect(capturedPrompt).not.toContain('Refresh cadence:');
+    expect(capturedPrompt).not.toContain('Honor this exact value');
+    expect(capturedPrompt).not.toContain('use ttlMs =');
   });
 
-  it('widget:chatSend reads persisted refreshTtlMs and includes it in the prompt', async () => {
+  it('widget:chatStart with refreshTtlMs persists it without adding a cadence directive to the prompt', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+
+    let capturedPrompt = '';
+    const runCodex = vi.fn(async ({ cwd, prompt }: any) => {
+      capturedPrompt = prompt;
+      await fs.writeFile(path.join(cwd, 'index.html'), '<html></html>');
+      return { ok: true };
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const { uuid } = await ipc.invoke('widget:chatStart', 'show weather', undefined, 300_000);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect((await store.getMeta(uuid)).refreshTtlMs).toBe(300_000);
+    expect(capturedPrompt).not.toContain('Refresh cadence:');
+    expect(capturedPrompt).not.toContain('Honor this exact value');
+    expect(capturedPrompt).not.toContain('use ttlMs =');
+  });
+
+  it('widget:chatSend reads persisted refreshTtlMs without adding it to the prompt', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);
     const secrets = createSecretsStore(root);
@@ -524,7 +551,10 @@ describe('ipc', () => {
     await ipc.invoke('widget:chatSend', uuid, 'tweak the title');
     await new Promise((r) => setTimeout(r, 20));
 
-    expect(capturedPrompt).toContain('Refresh cadence: 5 min (use ttlMs = 300000');
+    expect((await store.getMeta(uuid)).refreshTtlMs).toBe(300_000);
+    expect(capturedPrompt).not.toContain('Refresh cadence:');
+    expect(capturedPrompt).not.toContain('Honor this exact value');
+    expect(capturedPrompt).not.toContain('use ttlMs =');
   });
 
   it('widget:setProviders persists known ids and rejects unknown ones', async () => {
@@ -790,6 +820,10 @@ describe('ipc', () => {
 
     const setResult = await ipc.invokeWithEvent('app:cache:set', event, 'weather', { temp: 17 }, 60_000);
     expect(setResult).toEqual({ ok: true });
+    const written = JSON.parse(await fs.readFile(path.join(store.dir(uuid), 'cache.json'), 'utf8'));
+    expect(written.weather.value).toEqual({ temp: 17 });
+    expect(typeof written.weather.fetchedAt).toBe('number');
+    expect(typeof written.weather.expiresAt).toBe('number');
 
     const got = await ipc.invokeWithEvent('app:cache:get', event, 'weather');
     expect(got).not.toBeNull();
@@ -801,6 +835,104 @@ describe('ipc', () => {
     }));
     const expired = await ipc.invokeWithEvent('app:cache:get', event, 'weather');
     expect(expired).toBeNull();
+  });
+
+  it('app:cache:get lets widget metadata refreshTtlMs override a widget-provided TTL', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const uuid = await store.create('p');
+    await fs.writeFile(path.join(store.dir(uuid), 'index.html'), '<html></html>');
+    await store.setRefreshTtl(uuid, 300_000);
+    await fs.writeFile(path.join(store.dir(uuid), 'cache.json'), JSON.stringify({
+      weather: { value: { temp: 17 }, fetchedAt: Date.now() - 600_000, expiresAt: Date.now() + 86_400_000 }
+    }));
+    const senderUrl = pathToFileURL(path.join(store.dir(uuid), 'index.html')).href;
+    const event = { senderFrame: { url: senderUrl } } as any;
+
+    expect(await ipc.invokeWithEvent('app:cache:get', event, 'weather', 86_400_000)).toBeNull();
+  });
+
+  it('app:cache:get falls back to widget-provided TTL when metadata refreshTtlMs is absent', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const uuid = await store.create('p');
+    await fs.writeFile(path.join(store.dir(uuid), 'index.html'), '<html></html>');
+    await fs.writeFile(path.join(store.dir(uuid), 'cache.json'), JSON.stringify({
+      weather: { value: { temp: 17 }, fetchedAt: Date.now() - 600_000, expiresAt: Date.now() + 86_400_000 }
+    }));
+    const senderUrl = pathToFileURL(path.join(store.dir(uuid), 'index.html')).href;
+    const event = { senderFrame: { url: senderUrl } } as any;
+
+    const longTtl = await ipc.invokeWithEvent('app:cache:get', event, 'weather', 86_400_000);
+    expect(longTtl?.value).toEqual({ temp: 17 });
+    expect(await ipc.invokeWithEvent('app:cache:get', event, 'weather', 300_000)).toBeNull();
+  });
+
+  it('app:cache live mode bypasses reads and writes', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const uuid = await store.create('p');
+    await fs.writeFile(path.join(store.dir(uuid), 'index.html'), '<html></html>');
+    await store.setRefreshTtl(uuid, 0);
+    const existing = {
+      weather: { value: { temp: 17 }, fetchedAt: Date.now(), expiresAt: Date.now() + 86_400_000 }
+    };
+    await fs.writeFile(path.join(store.dir(uuid), 'cache.json'), JSON.stringify(existing));
+    const senderUrl = pathToFileURL(path.join(store.dir(uuid), 'index.html')).href;
+    const event = { senderFrame: { url: senderUrl } } as any;
+
+    expect(await ipc.invokeWithEvent('app:cache:get', event, 'weather', 86_400_000)).toBeNull();
+    expect(await ipc.invokeWithEvent('app:cache:set', event, 'weather', { temp: 18 }, 86_400_000)).toEqual({ ok: true });
+    const after = JSON.parse(await fs.readFile(path.join(store.dir(uuid), 'cache.json'), 'utf8'));
+    expect(after.weather.value).toEqual({ temp: 17 });
+  });
+
+  it('app:cache:get keeps legacy expiresAt-only cache entries compatible', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const uuid = await store.create('p');
+    await fs.writeFile(path.join(store.dir(uuid), 'index.html'), '<html></html>');
+    const senderUrl = pathToFileURL(path.join(store.dir(uuid), 'index.html')).href;
+    const event = { senderFrame: { url: senderUrl } } as any;
+
+    await fs.writeFile(path.join(store.dir(uuid), 'cache.json'), JSON.stringify({
+      weather: { value: { temp: 17 }, expiresAt: Date.now() + 60_000 }
+    }));
+    const valid = await ipc.invokeWithEvent('app:cache:get', event, 'weather', 60_000);
+    expect(valid?.value).toEqual({ temp: 17 });
+
+    await fs.writeFile(path.join(store.dir(uuid), 'cache.json'), JSON.stringify({
+      weather: { value: { temp: 17 }, expiresAt: Date.now() - 1000 }
+    }));
+    expect(await ipc.invokeWithEvent('app:cache:get', event, 'weather', 60_000)).toBeNull();
   });
 
   it('app:cache:get returns null for non-widget senders; app:cache:set rejects them', async () => {
