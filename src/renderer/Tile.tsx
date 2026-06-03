@@ -13,6 +13,7 @@ interface Props {
   size?: WidgetSize;
   geekMode?: boolean;
   summary?: { sources: string[] };
+  refreshTtlMs?: number;
   onRefresh: () => void;
   onDismiss: () => void;
   onEditChat: () => void;
@@ -27,6 +28,17 @@ const SIZE_LABEL: Record<WidgetSize, string> = {
   wide: 'Size 2×1',
   large: 'Size 2×2'
 };
+
+const DEFAULT_REFRESH_TTL_MS = 3_600_000;
+const LIVE_RELOAD_INTERVAL_MS = 30_000;
+
+function frameReloadIntervalMs(refreshTtlMs: number | undefined): number {
+  if (refreshTtlMs === 0) return LIVE_RELOAD_INTERVAL_MS;
+  if (typeof refreshTtlMs === 'number' && Number.isFinite(refreshTtlMs) && refreshTtlMs > 0) {
+    return refreshTtlMs;
+  }
+  return DEFAULT_REFRESH_TTL_MS;
+}
 
 const TILE: React.CSSProperties = {
   position: 'relative', width: '100%', height: '100%',
@@ -128,11 +140,21 @@ export default function Tile(props: Props) {
     };
   }, [infoOpen]);
 
-  const handleRefresh = () => {
+  const reloadFrame = () => {
     const wv = wvRef.current as any;
-    if (wv && typeof wv.reload === 'function') wv.reload();
+    if (wv && typeof wv.reload === 'function') {
+      wv.reload();
+      return;
+    }
     props.onRefresh();
   };
+
+  useEffect(() => {
+    if (props.state.kind !== 'live') return;
+    const intervalMs = frameReloadIntervalMs(props.refreshTtlMs);
+    const timer = window.setInterval(reloadFrame, intervalMs);
+    return () => window.clearInterval(timer);
+  }, [props.state.kind, props.refreshTtlMs, props.htmlUrl]);
 
   const handleDelete = () => {
     if (confirmingDelete) {
@@ -164,7 +186,7 @@ export default function Tile(props: Props) {
         </button>
         {props.state.kind === 'live' && (
           <>
-            <button style={BTN} onClick={handleRefresh}>Refresh</button>
+            <button style={BTN} onClick={reloadFrame}>Refresh</button>
             <button style={BTN} onClick={props.onEditChat}>Edit with chat</button>
           </>
         )}

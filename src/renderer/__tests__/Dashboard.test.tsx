@@ -673,6 +673,23 @@ describe('Dashboard', () => {
     expect(screen.getByText(/building preview/i)).toBeInTheDocument();
   });
 
+  it('refresh dropdown change updates the live widget cadence', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce([
+      { uuid: 'a', prompt: 'clock', created_at: '', refreshTtlMs: 3_600_000 }
+    ]);
+    (window as any).api = m.api;
+
+    render(<Dashboard />);
+    await screen.findByRole('button', { name: 'Edit with chat' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Edit with chat' }));
+    await userEvent.selectOptions(await screen.findByLabelText('Refresh cadence'), '60000');
+
+    expect(m.api.setWidgetRefreshTtl).toHaveBeenCalledWith('a', 60_000);
+    expect(screen.getByLabelText('Refresh cadence')).toHaveValue('60000');
+  });
+
   it('widget:ready for edited uuid refreshes same tile', async () => {
     const m = mockApi({ onboardingDismissed: true });
     m.api.listWidgets.mockResolvedValueOnce([

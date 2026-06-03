@@ -20,6 +20,7 @@ interface WidgetChatPanelProps {
   onSent: (uuid: string, prompt: string) => void;
   onDeleted: (uuid: string) => void;
   onAddProviderRequest?: (name: string) => void;
+  onRefreshChanged?: (uuid: string, refreshTtlMs: number) => void;
 }
 
 interface RefreshPreset {
@@ -165,7 +166,8 @@ export default function WidgetChatPanel({
   onCreated,
   onSent,
   onDeleted,
-  onAddProviderRequest
+  onAddProviderRequest,
+  onRefreshChanged
 }: WidgetChatPanelProps) {
   const [value, setValue] = useState(initialMessage);
   const [messages, setMessages] = useState<WidgetChatMessage[]>([]);
@@ -383,6 +385,7 @@ export default function WidgetChatPanel({
     setRefreshDirty(true);
     if (currentUuid) {
       void window.api.setWidgetRefreshTtl(currentUuid, next);
+      onRefreshChanged?.(currentUuid, next);
     }
   };
 

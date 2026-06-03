@@ -1,9 +1,14 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import Tile from '../Tile';
 
 describe('Tile', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
   it('shows building spinner when state is building', () => {
     render(
       <Tile
@@ -152,6 +157,132 @@ describe('Tile', () => {
     expect(onEditChat).toHaveBeenCalled();
     expect(onTogglePinned).toHaveBeenCalled();
     expect(onDismiss).toHaveBeenCalled();
+  });
+
+  it('schedules live tile reload using refreshTtlMs', () => {
+    vi.useFakeTimers();
+    const { container } = render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'live' }}
+        htmlUrl="file:///x"
+        widgetPreloadUrl=""
+        refreshTtlMs={60_000}
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+      />
+    );
+    const webview = container.querySelector('webview') as any;
+    webview.reload = vi.fn();
+
+    act(() => { vi.advanceTimersByTime(59_000); });
+    expect(webview.reload).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(1_000); });
+    expect(webview.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses 30 seconds for Live refresh', () => {
+    vi.useFakeTimers();
+    const { container } = render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'live' }}
+        htmlUrl="file:///x"
+        widgetPreloadUrl=""
+        refreshTtlMs={0}
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+      />
+    );
+    const webview = container.querySelector('webview') as any;
+    webview.reload = vi.fn();
+
+    act(() => { vi.advanceTimersByTime(30_000); });
+    expect(webview.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not schedule reload for building or error tiles', () => {
+    vi.useFakeTimers();
+    const onRefresh = vi.fn();
+    const { rerender } = render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'building' }}
+        htmlUrl=""
+        widgetPreloadUrl=""
+        refreshTtlMs={1_000}
+        onRefresh={onRefresh}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+      />
+    );
+
+    act(() => { vi.advanceTimersByTime(5_000); });
+    expect(onRefresh).not.toHaveBeenCalled();
+
+    rerender(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'error', message: 'boom' }}
+        htmlUrl=""
+        widgetPreloadUrl=""
+        refreshTtlMs={1_000}
+        onRefresh={onRefresh}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+      />
+    );
+    act(() => { vi.advanceTimersByTime(5_000); });
+    expect(onRefresh).not.toHaveBeenCalled();
+  });
+
+  it('manual Refresh reloads webview immediately when available', async () => {
+    const onRefresh = vi.fn();
+    const { container } = render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'live' }}
+        htmlUrl="file:///x"
+        widgetPreloadUrl=""
+        onRefresh={onRefresh}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+      />
+    );
+    const webview = container.querySelector('webview') as any;
+    webview.reload = vi.fn();
+
+    await userEvent.click(screen.getByRole('button', { name: /refresh/i }));
+
+    expect(webview.reload).toHaveBeenCalledTimes(1);
+    expect(onRefresh).not.toHaveBeenCalled();
   });
 
   it('delete requires a confirm click before dismissing', async () => {

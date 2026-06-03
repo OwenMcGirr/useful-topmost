@@ -34,6 +34,8 @@ interface Deps {
 const CLIENT_JS = `
 const root = document.getElementById('root');
 let grid = null;
+const DEFAULT_REFRESH_TTL_MS = 3600000;
+const LIVE_RELOAD_INTERVAL_MS = 30000;
 
 function sizeClass(size) {
   if (size === 'wide') return 'tile tile-wide';
@@ -47,6 +49,17 @@ function widgetTitle(widget) {
 
 function widgetState(widget) {
   return widget.state === 'building' ? 'building' : 'live';
+}
+
+function refreshIntervalMs(widget) {
+  if (widget.refreshTtlMs === 0) return LIVE_RELOAD_INTERVAL_MS;
+  if (Number.isFinite(widget.refreshTtlMs) && widget.refreshTtlMs > 0) return widget.refreshTtlMs;
+  return DEFAULT_REFRESH_TTL_MS;
+}
+
+function widgetSrc(widget, rev) {
+  const base = '/widgets/' + encodeURIComponent(widget.uuid) + '/';
+  return rev ? base + '?rev=' + encodeURIComponent(String(rev)) : base;
 }
 
 function widgetSubtitle(widget) {
@@ -90,6 +103,7 @@ function updateTile(section, widget) {
   section.dataset.state = state;
 
   if (state === 'building') {
+    delete section.dataset.lastReloadAt;
     const iframe = section.querySelector('iframe');
     if (iframe) iframe.remove();
 
@@ -126,12 +140,21 @@ function updateTile(section, widget) {
   if (placeholder) placeholder.remove();
 
   let iframe = section.querySelector('iframe');
-  const nextSrc = '/widgets/' + encodeURIComponent(widget.uuid) + '/';
+  const now = Date.now();
+  const intervalMs = refreshIntervalMs(widget);
+  const lastReloadAt = Number(section.dataset.lastReloadAt || '0');
   if (!iframe) {
     iframe = document.createElement('iframe');
     section.appendChild(iframe);
+    section.dataset.lastReloadAt = String(now);
+    iframe.src = widgetSrc(widget);
+  } else if (!iframe.getAttribute('src')) {
+    iframe.src = widgetSrc(widget);
+    section.dataset.lastReloadAt = String(now);
+  } else if (now - lastReloadAt >= intervalMs) {
+    iframe.src = widgetSrc(widget, now);
+    section.dataset.lastReloadAt = String(now);
   }
-  if (iframe.getAttribute('src') !== nextSrc) iframe.src = nextSrc;
   iframe.title = widgetTitle(widget);
 }
 
@@ -283,20 +306,27 @@ const WIDGET_SHIM_JS = `
   };
 
   window.cache = {
-    async get(key, ttlMs, fetcher) {
-      if (typeof key === 'string' && key.length > 0 && ttlMs > 0) {
-        const cached = await fetch('/api/widgets/' + encodeURIComponent(uuid) + '/cache/' + encodeURIComponent(key), { cache: 'no-store' });
+    async get(key, ttlOrFetcher, maybeFetcher) {
+      const requestedTtlMs = typeof ttlOrFetcher === 'number' ? ttlOrFetcher : undefined;
+      const fetcher = typeof ttlOrFetcher === 'function' ? ttlOrFetcher : maybeFetcher;
+      if (typeof fetcher !== 'function') {
+        throw new TypeError('window.cache.get requires a fetcher');
+      }
+
+      if (typeof key === 'string' && key.length > 0) {
+        const query = requestedTtlMs === undefined ? '' : '?ttlMs=' + encodeURIComponent(String(requestedTtlMs));
+        const cached = await fetch('/api/widgets/' + encodeURIComponent(uuid) + '/cache/' + encodeURIComponent(key) + query, { cache: 'no-store' });
         if (cached.ok) {
           const payload = await cached.json();
           if (payload.hit) return payload.value;
         }
       }
       const fresh = await fetcher();
-      if (typeof key === 'string' && key.length > 0 && ttlMs > 0) {
+      if (typeof key === 'string' && key.length > 0) {
         await fetch('/api/widgets/' + encodeURIComponent(uuid) + '/cache/' + encodeURIComponent(key), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ value: fresh, ttlMs })
+          body: JSON.stringify({ value: fresh, ttlMs: requestedTtlMs })
         }).catch(() => undefined);
       }
       return fresh;
@@ -330,6 +360,16 @@ function notFound(res: ServerResponse): void {
 
 function badRequest(res: ServerResponse, error: string): void {
   json(res, 400, { error });
+}
+
+const DEFAULT_REFRESH_TTL_MS = 3_600_000;
+
+function validRequestedTtl(ttlMs: unknown): number | undefined {
+  return typeof ttlMs === 'number' && Number.isFinite(ttlMs) && ttlMs >= 0 ? ttlMs : undefined;
+}
+
+function effectiveRefreshTtlMs(metaRefreshTtlMs: number | undefined, requestedTtlMs: unknown): number {
+  return metaRefreshTtlMs ?? validRequestedTtl(requestedTtlMs) ?? DEFAULT_REFRESH_TTL_MS;
 }
 
 function readJson(req: IncomingMessage): Promise<any> {
@@ -504,7 +544,10 @@ export function createLanServerController({ widgets, secrets, appFetch = default
         return;
       }
       if (req.method === 'GET') {
-        const entry = await getCacheEntry(widgets.dir(uuid), key);
+        const meta = await widgets.getMeta(uuid);
+        const requestedTtlMs = parsedUrl.searchParams.has('ttlMs') ? Number(parsedUrl.searchParams.get('ttlMs')) : undefined;
+        const ttlMs = effectiveRefreshTtlMs(meta.refreshTtlMs, requestedTtlMs);
+        const entry = await getCacheEntry(widgets.dir(uuid), key, ttlMs);
         json(res, 200, entry ? { hit: true, value: entry.value } : { hit: false });
         return;
       }
@@ -516,11 +559,13 @@ export function createLanServerController({ widgets, secrets, appFetch = default
           badRequest(res, e?.message ?? 'Request body must be valid JSON.');
           return;
         }
-        if (typeof payload?.ttlMs !== 'number' || !Number.isFinite(payload.ttlMs)) {
-          badRequest(res, 'ttlMs must be a finite number.');
+        const meta = await widgets.getMeta(uuid);
+        const ttlMs = effectiveRefreshTtlMs(meta.refreshTtlMs, payload?.ttlMs);
+        if (ttlMs <= 0) {
+          json(res, 200, { ok: true });
           return;
         }
-        await writeCacheEntry(widgets.dir(uuid), key, payload.value, payload.ttlMs);
+        await writeCacheEntry(widgets.dir(uuid), key, payload.value, ttlMs);
         json(res, 200, { ok: true });
         return;
       }

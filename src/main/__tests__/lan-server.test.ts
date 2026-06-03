@@ -186,6 +186,7 @@ describe('lan-server', () => {
   it('supports widget cache get and put routes', async () => {
     const root = await freshRoot();
     const { widgets, uuid } = await createWidget(root);
+    await widgets.setRefreshTtl(uuid, 60_000);
     const controller = createLanServerController({ widgets, secrets: createSecretsStore(root) });
     const state = await controller.applyConfig({ enabled: true, port: 0 });
     try {
@@ -195,10 +196,38 @@ describe('lan-server', () => {
       const put = await fetch(cacheUrl, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value: { temp: 17 }, ttlMs: 60_000 })
+        body: JSON.stringify({ value: { temp: 17 } })
       });
       expect(await put.json()).toEqual({ ok: true });
       expect(await (await fetch(cacheUrl)).json()).toEqual({ hit: true, value: { temp: 17 } });
+    } finally {
+      await controller.stop();
+    }
+  });
+
+  it('uses widget metadata for LAN cache freshness and bypasses live cache', async () => {
+    const root = await freshRoot();
+    const { widgets, uuid } = await createWidget(root);
+    await widgets.setRefreshTtl(uuid, 60_000);
+    const controller = createLanServerController({ widgets, secrets: createSecretsStore(root) });
+    const state = await controller.applyConfig({ enabled: true, port: 0 });
+    try {
+      const cacheUrl = `http://127.0.0.1:${state.port}/api/widgets/${uuid}/cache/weather`;
+      await fs.writeFile(path.join(widgets.dir(uuid), 'cache.json'), JSON.stringify({
+        weather: { value: { temp: 17 }, fetchedAt: Date.now() - 120_000, expiresAt: Date.now() + 86_400_000 }
+      }));
+      expect(await (await fetch(`${cacheUrl}?ttlMs=86400000`)).json()).toEqual({ hit: false });
+
+      await widgets.setRefreshTtl(uuid, 0);
+      const put = await fetch(cacheUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: { temp: 18 }, ttlMs: 86_400_000 })
+      });
+      expect(await put.json()).toEqual({ ok: true });
+      expect(await (await fetch(`${cacheUrl}?ttlMs=86400000`)).json()).toEqual({ hit: false });
+      const raw = JSON.parse(await fs.readFile(path.join(widgets.dir(uuid), 'cache.json'), 'utf8'));
+      expect(raw.weather.value).toEqual({ temp: 17 });
     } finally {
       await controller.stop();
     }
@@ -212,6 +241,9 @@ describe('lan-server', () => {
     try {
       const shim = await readText(`http://127.0.0.1:${state.port}/lan-widget-shim.js`);
       expect(shim.body).toContain('window.local = undefined');
+      expect(shim.body).toContain('ttlOrFetcher');
+      expect(shim.body).toContain('window.cache.get requires a fetcher');
+      expect(shim.body).toContain('ttlMs=');
       expect(shim.body).not.toContain('exec:');
     } finally {
       await controller.stop();
@@ -226,10 +258,13 @@ describe('lan-server', () => {
     try {
       const client = await readText(`http://127.0.0.1:${state.port}/lan-client.js`);
       expect(client.body).toContain('function updateTile');
+      expect(client.body).toContain('LIVE_RELOAD_INTERVAL_MS');
+      expect(client.body).toContain('function refreshIntervalMs');
+      expect(client.body).toContain('?rev=');
       expect(client.body).toContain('if (section !== cursor) nextGrid.insertBefore(section, cursor)');
       expect(client.body).toContain('cursor = section.nextElementSibling');
       expect(client.body).toContain("if (!iframe) {");
-      expect(client.body).toContain("if (iframe.getAttribute('src') !== nextSrc) iframe.src = nextSrc");
+      expect(client.body).toContain('section.dataset.lastReloadAt');
       expect(client.body).not.toContain("root.innerHTML = '<main class=\"grid\">'");
       expect(client.body).not.toContain('nextGrid.appendChild(section)');
       expect(client.body).not.toContain('<iframe title="');

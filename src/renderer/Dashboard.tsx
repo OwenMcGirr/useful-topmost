@@ -377,6 +377,14 @@ export default function Dashboard() {
     setTiles((prev) => prev.map((t) => t.uuid === uuid ? { ...t, prompt } : t));
   }, []);
 
+  const handleRefreshChanged = useCallback((uuid: string, refreshTtlMs: number) => {
+    setTiles((prev) => prev.map((t) => t.uuid === uuid ? { ...t, refreshTtlMs } : t));
+    setChat((current) => current.open && current.mode === 'edit' && current.widget.uuid === uuid
+      ? { ...current, widget: { ...current.widget, refreshTtlMs } }
+      : current
+    );
+  }, []);
+
   const dismissOnboarding = useCallback(() => {
     setOnboardingDismissed(true);
     void window.api.onboarding.dismiss();
@@ -510,6 +518,7 @@ export default function Dashboard() {
                 size={t.size}
                 geekMode={geekMode}
                 summary={t.summary}
+                refreshTtlMs={t.refreshTtlMs}
                 onRefresh={() => {}}
                 onDismiss={() => handleDelete(t.uuid)}
                 onEditChat={() => handleEditChat(t)}
@@ -564,6 +573,7 @@ export default function Dashboard() {
         onDeleted={(uuid) => setTiles((prev) => prev.filter((t) => t.uuid !== uuid))}
         onCreated={handleChatCreated}
         onSent={handleChatSent}
+        onRefreshChanged={handleRefreshChanged}
         onAddProviderRequest={(name) => { setAddProviderSeedQuery(name); setSettingsOpen(true); }}
       />
       <SettingsModal
