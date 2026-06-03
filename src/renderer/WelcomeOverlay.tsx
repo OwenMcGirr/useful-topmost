@@ -95,7 +95,7 @@ export default function WelcomeOverlay({ onDismiss, onUseExample }: Props) {
       }}
     >
       <div style={PANEL}>
-        <h1 style={HEADLINE}>Welcome to useful-topmost</h1>
+        <h1 style={HEADLINE}>Welcome to Useful Topmost</h1>
         <p style={INTRO}>
           Hit the green <strong>+</strong> button (bottom-right) and tell it what
           widget you want — a clock, a stock ticker, your GitHub run status.

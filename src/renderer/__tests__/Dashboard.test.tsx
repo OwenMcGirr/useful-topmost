@@ -694,7 +694,7 @@ describe('Dashboard', () => {
 
     render(<Dashboard />);
 
-    expect(await screen.findByText(/welcome to useful-topmost/i)).toBeInTheDocument();
+    expect(await screen.findByText(/welcome to Useful Topmost/i)).toBeInTheDocument();
   });
 
   it('does not show the welcome overlay when there are widgets', async () => {
@@ -706,7 +706,7 @@ describe('Dashboard', () => {
 
     const { container } = render(<Dashboard />);
     await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(1));
-    expect(screen.queryByText(/welcome to useful-topmost/i)).toBeNull();
+    expect(screen.queryByText(/welcome to Useful Topmost/i)).toBeNull();
   });
 
   it('does not show the welcome overlay when onboarding is already dismissed', async () => {
@@ -716,7 +716,7 @@ describe('Dashboard', () => {
     render(<Dashboard />);
 
     expect(await screen.findByText(/no widgets yet/i)).toBeInTheDocument();
-    expect(screen.queryByText(/welcome to useful-topmost/i)).toBeNull();
+    expect(screen.queryByText(/welcome to Useful Topmost/i)).toBeNull();
   });
 
   it('clicking an example chip persists dismissal and opens chat pre-filled', async () => {
@@ -776,12 +776,12 @@ describe('Dashboard', () => {
     (window as any).api = m.api;
 
     render(<Dashboard />);
-    await screen.findByText(/welcome to useful-topmost/i);
+    await screen.findByText(/welcome to Useful Topmost/i);
 
     await userEvent.click(screen.getByRole('button', { name: /dismiss/i }));
 
     await waitFor(() => expect(m.api.onboarding.dismiss).toHaveBeenCalled());
-    expect(screen.queryByText(/welcome to useful-topmost/i)).toBeNull();
+    expect(screen.queryByText(/welcome to Useful Topmost/i)).toBeNull();
     expect(screen.queryByLabelText(/widget message/i)).toBeNull();
   });
 });

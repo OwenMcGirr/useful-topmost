@@ -1,4 +1,4 @@
-# useful-topmost
+# Useful Topmost
 
 A frameless full-screen Electron dashboard where each widget is generated
 on the fly by the [OpenAI Codex CLI][codex-cli]. You type a prompt at the
