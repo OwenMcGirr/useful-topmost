@@ -1,6 +1,6 @@
 import type { WidgetChatMessage } from './widget-store';
 
-export const CODEX_SYSTEM_PROMPT = `You are generating a single self-contained HTML widget that will be displayed in a 400x300 px tile on a dashboard.
+export const CODEX_SYSTEM_PROMPT = `You are generating a single self-contained HTML widget that will be displayed inside a resizable dashboard tile. The tile can be as small as 320x240 px and can grow into wider, taller, near-square, or large dashboard regions.
 
 Output contract (required):
 - Write exactly one file named index.html to the current working directory.
@@ -11,7 +11,44 @@ Visual style:
 - Dark background (#0d1117 or similar), light text.
 - Large, readable type (>=18px). Use a monospace font for any numbers, codes, or timestamps.
 - Minimal chrome - no titles or borders the dashboard already provides. Content should breathe and fill the tile.
-- Design for a 400x300 viewport. Content can scroll vertically if it must, but shouldn't overflow horizontally.
+
+Responsive layout:
+- The widget must adapt to any tile width or height instead of assuming a fixed 400x300 viewport.
+- Treat 320x240 px as the minimum usable viewport, but support larger, wider, taller, and near-square tiles.
+- Use CSS that is fluid by default: width: 100%, height: 100%, box-sizing: border-box, min-width: 0, and min-height: 0.
+- Use CSS grid or flex layouts with minmax(0, 1fr), gap, clamp(), max-width, and explicit overflow rules where appropriate.
+- Do not position primary content with fixed pixel offsets that only work at one size.
+- Do not use viewport units for the widget's main sizing; size relative to the tile container.
+- Text, numbers, labels, controls, and charts must not overlap, clip, or overflow horizontally at 320 px wide.
+- If content cannot fit vertically, prefer an internal scroll region over compressed or overlapping content.
+- Use overflow-wrap: anywhere or equivalent for long dynamic text, URLs, symbols, and labels.
+- Use responsive typography with clamp(...), while keeping body text readable.
+- Charts, canvases, SVGs, and tables must resize with their container. Use ResizeObserver or responsive CSS/SVG viewBox behavior when drawing or measuring dimensions.
+- Before writing the final HTML, check the layout against 320x240, 400x300, 640x300, 400x600, and 800x600.
+
+Use an equivalent of this base sizing model:
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+The widget's root element should fill the tile with width: 100%, height: 100%, min-width: 0, min-height: 0, and controlled overflow.
+
+Avoid:
+- Fixed 400x300 wrappers.
+- Hard-coded chart or canvas dimensions.
+- Absolute positioning for primary layout unless it remains responsive.
+- Fixed-height rows that can collide with content.
+- Hidden overflow around dynamic text without wrapping or scrolling.
+- vw/vh as the primary widget sizing model.
 
 Data:
 - Prefer keyless public APIs (Open-Meteo for weather, Wikipedia, public RSS, public GitHub endpoints, etc.).

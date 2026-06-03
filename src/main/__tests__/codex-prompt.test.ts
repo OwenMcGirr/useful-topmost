@@ -5,7 +5,20 @@ describe('codex-prompt', () => {
   it('exports a non-empty system prompt that mentions the output contract', () => {
     expect(CODEX_SYSTEM_PROMPT.length).toBeGreaterThan(200);
     expect(CODEX_SYSTEM_PROMPT).toContain('index.html');
-    expect(CODEX_SYSTEM_PROMPT).toContain('400');
+    expect(CODEX_SYSTEM_PROMPT).toContain('resizable dashboard tile');
+  });
+
+  it('instructs Codex to create responsive widgets for dynamic tile sizes', () => {
+    expect(CODEX_SYSTEM_PROMPT).not.toContain('displayed in a 400x300 px tile');
+    expect(CODEX_SYSTEM_PROMPT).not.toContain('Design for a 400x300 viewport');
+    expect(CODEX_SYSTEM_PROMPT).toContain('resizable dashboard tile');
+    expect(CODEX_SYSTEM_PROMPT).toContain('320x240');
+    expect(CODEX_SYSTEM_PROMPT).toContain('any tile width or height');
+    expect(CODEX_SYSTEM_PROMPT).toContain('minmax(0, 1fr)');
+    expect(CODEX_SYSTEM_PROMPT).toContain('overflow-wrap: anywhere');
+    expect(CODEX_SYSTEM_PROMPT).toContain('ResizeObserver');
+    expect(CODEX_SYSTEM_PROMPT).toContain('400x600');
+    expect(CODEX_SYSTEM_PROMPT).toContain('800x600');
   });
 
   it('documents local CLI execution for widgets', () => {
@@ -87,6 +100,8 @@ describe('codex-prompt', () => {
   it('buildPrompt appends the user prompt after the system prompt', () => {
     const out = buildPrompt('show the weather');
     expect(out.startsWith(CODEX_SYSTEM_PROMPT)).toBe(true);
+    expect(out).toContain('any tile width or height');
+    expect(out).toContain('ResizeObserver');
     expect(out.endsWith('show the weather')).toBe(true);
   });
 
@@ -123,6 +138,8 @@ describe('codex-prompt', () => {
     });
 
     expect(out).toContain(CODEX_SYSTEM_PROMPT);
+    expect(out).toContain('any tile width or height');
+    expect(out).toContain('ResizeObserver');
     expect(out).toContain('Conversation history:');
     expect(out).toContain('1. make a clock');
     expect(out).toContain('2. make it blue');
