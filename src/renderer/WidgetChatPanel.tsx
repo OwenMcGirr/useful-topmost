@@ -178,6 +178,8 @@ export default function WidgetChatPanel({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [autoCloseSeconds, setAutoCloseSeconds] = useState<number | null>(null);
+  const createdUuidRef = useRef<string | null>(null);
+  const autoCloseArmedRef = useRef(false);
 
   useEffect(() => {
     if (!confirmingDelete) return;
@@ -190,7 +192,11 @@ export default function WidgetChatPanel({
   }, [open]);
 
   useEffect(() => {
-    if (!open) setAutoCloseSeconds(null);
+    if (!open) {
+      createdUuidRef.current = null;
+      autoCloseArmedRef.current = false;
+      setAutoCloseSeconds(null);
+    }
   }, [open]);
 
   const title = mode === 'create' && !currentUuid ? 'New widget' : 'Edit widget';
@@ -204,13 +210,14 @@ export default function WidgetChatPanel({
 
   useEffect(() => {
     if (!open) return;
+    const isCreatedWidgetTransition = widget?.uuid !== undefined && widget.uuid === createdUuidRef.current;
     setValue(initialMessage);
     setCurrentUuid(widget?.uuid ?? null);
     setPreviewUrl(cacheBust(widget?.htmlUrl));
     setMessages([]);
     setBuilding(false);
     setPlanSuggestions([]);
-    setAutoCloseSeconds(null);
+    if (!isCreatedWidgetTransition) setAutoCloseSeconds(null);
     if (widget?.uuid) {
       void loadChat(widget.uuid);
     }
@@ -257,11 +264,20 @@ export default function WidgetChatPanel({
       const htmlUrl = await window.api.htmlUrl(uuid);
       setPreviewUrl(cacheBust(htmlUrl));
       setBuilding(false);
+      if (autoCloseArmedRef.current && uuid === createdUuidRef.current) {
+        autoCloseArmedRef.current = false;
+        setAutoCloseSeconds(3);
+      }
     });
     const offError = window.api.onWidgetError(async (uuid) => {
       if (uuid !== currentUuid) return;
       await loadChat(uuid);
       setBuilding(false);
+      if (uuid === createdUuidRef.current) {
+        createdUuidRef.current = null;
+        autoCloseArmedRef.current = false;
+        setAutoCloseSeconds(null);
+      }
     });
     const offPlan = window.api.onWidgetPlan(async (uuid, providers) => {
       if (uuid !== currentUuid) return;
@@ -293,13 +309,20 @@ export default function WidgetChatPanel({
       onClose();
       return;
     }
-    const timer = window.setTimeout(() => setAutoCloseSeconds((current) => (
-      current === null ? null : current - 1
-    )), 1000);
+    const timer = window.setTimeout(() => setAutoCloseSeconds((current) => {
+      if (current === null) return null;
+      if (current <= 1) {
+        onClose();
+        return null;
+      }
+      return current - 1;
+    }), 1000);
     return () => window.clearTimeout(timer);
   }, [autoCloseSeconds, onClose]);
 
   const cancelAutoClose = () => {
+    if (autoCloseSeconds === null) return;
+    autoCloseArmedRef.current = false;
     setAutoCloseSeconds(null);
   };
 
@@ -372,9 +395,10 @@ export default function WidgetChatPanel({
       if (!currentUuid) {
         const ids = Array.from(selectedIds);
         const { uuid } = await window.api.chatStartWidget(trimmed, ids, refreshTtlMs);
+        createdUuidRef.current = uuid;
+        autoCloseArmedRef.current = true;
         setCurrentUuid(uuid);
         onCreated(uuid, trimmed, ids, refreshTtlMs);
-        setAutoCloseSeconds(3);
       } else {
         const result = await window.api.chatSendWidget(currentUuid, trimmed);
         if (!result.ok) {

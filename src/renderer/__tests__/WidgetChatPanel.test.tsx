@@ -112,11 +112,26 @@ describe('WidgetChatPanel', () => {
     expect(screen.getByText(/building preview/i)).toBeInTheDocument();
   });
 
-  it('shows a close countdown after creating a widget and closes when it expires', async () => {
-    vi.useFakeTimers();
+  it('does not start the close countdown immediately after creating a widget', async () => {
     const { api } = mockApi();
     const onClose = vi.fn();
     (window as any).api = api;
+    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={onClose} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+
+    await userEvent.type(screen.getByLabelText(/widget message/i), 'show weather');
+    await userEvent.click(screen.getByRole('button', { name: /send/i }));
+
+    await waitFor(() => expect(api.chatStartWidget).toHaveBeenCalledWith('show weather', [], 3_600_000));
+    expect(screen.getByText(/building preview/i)).toBeInTheDocument();
+    expect(screen.queryByText(/closing in 3s/i)).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('starts the close countdown after the created widget is ready and closes when it expires', async () => {
+    vi.useFakeTimers();
+    const m = mockApi();
+    const onClose = vi.fn();
+    (window as any).api = m.api;
     render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={onClose} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
 
     await act(async () => {
@@ -124,6 +139,15 @@ describe('WidgetChatPanel', () => {
       fireEvent.click(screen.getByRole('button', { name: /send/i }));
     });
 
+    expect(screen.queryByText(/closing in 3s/i)).toBeNull();
+
+    await act(async () => {
+      m.fireReady('new-widget');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(m.api.htmlUrl).toHaveBeenCalledWith('new-widget');
     expect(screen.getByText(/closing in 3s/i)).toBeInTheDocument();
 
     await act(async () => {
@@ -142,17 +166,71 @@ describe('WidgetChatPanel', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('cancels the close countdown when the user keeps interacting', async () => {
+  it('does not start the close countdown when a different widget is ready', async () => {
     vi.useFakeTimers();
-    const { api } = mockApi();
+    const m = mockApi();
     const onClose = vi.fn();
-    (window as any).api = api;
+    (window as any).api = m.api;
+    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={onClose} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/widget message/i), { target: { value: 'show weather' } });
+      fireEvent.click(screen.getByRole('button', { name: /send/i }));
+    });
+
+    await act(async () => {
+      m.fireReady('other-widget');
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText(/closing in 3s/i)).toBeNull();
+    await act(async () => {
+      vi.advanceTimersByTime(4000);
+    });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-close when the created widget fails', async () => {
+    vi.useFakeTimers();
+    const m = mockApi();
+    const onClose = vi.fn();
+    (window as any).api = m.api;
+    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={onClose} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/widget message/i), { target: { value: 'show weather' } });
+      fireEvent.click(screen.getByRole('button', { name: /send/i }));
+    });
+
+    await act(async () => {
+      m.fireError('new-widget', 'boom');
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText(/closing in 3s/i)).toBeNull();
+    await act(async () => {
+      vi.advanceTimersByTime(4000);
+    });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('cancels the ready-triggered close countdown when the user keeps interacting', async () => {
+    vi.useFakeTimers();
+    const m = mockApi();
+    const onClose = vi.fn();
+    (window as any).api = m.api;
     render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={onClose} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
 
     const textarea = screen.getByLabelText(/widget message/i);
     await act(async () => {
       fireEvent.change(textarea, { target: { value: 'show weather' } });
       fireEvent.click(screen.getByRole('button', { name: /send/i }));
+    });
+
+    await act(async () => {
+      m.fireReady('new-widget');
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
     expect(screen.getByText(/closing in 3s/i)).toBeInTheDocument();
@@ -448,8 +526,10 @@ describe('WidgetChatPanel', () => {
     expect(screen.queryByText(/This widget will use/i)).toBeNull();
   });
 
-  it('refreshes preview after widget:ready', async () => {
+  it('refreshes preview after widget:ready in edit mode without auto-closing', async () => {
+    vi.useFakeTimers();
     const m = mockApi();
+    const onClose = vi.fn();
     (window as any).api = m.api;
     const { container } = render(
       <WidgetChatPanel
@@ -457,15 +537,25 @@ describe('WidgetChatPanel', () => {
         mode="edit"
         widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
         widgetPreloadUrl=""
-        onClose={() => {}}
+        onClose={onClose}
         onCreated={() => {}}
         onSent={() => {}}
       />
     );
 
-    m.fireReady('u1');
+    await act(async () => {
+      m.fireReady('u1');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
-    await waitFor(() => expect(m.api.htmlUrl).toHaveBeenCalledWith('u1'));
+    expect(m.api.htmlUrl).toHaveBeenCalledWith('u1');
     expect(container.querySelector('webview')?.getAttribute('src')).toContain('rev=');
+    expect(screen.queryByText(/closing in 3s/i)).toBeNull();
+
+    await act(async () => {
+      vi.advanceTimersByTime(4000);
+    });
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
