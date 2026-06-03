@@ -160,6 +160,22 @@ describe('Dashboard', () => {
     await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(2));
   });
 
+  it('renders widget bottom strip with summary name and loading status', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce([
+      { uuid: 'a', prompt: 'show weather', created_at: '', summary: { name: 'Local Weather', sources: [] }, refreshTtlMs: 60_000 }
+    ]);
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize();
+
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(1));
+    const strip = screen.getByLabelText('Widget details');
+    expect(strip).toHaveTextContent('Local Weather');
+    expect(strip).toHaveTextContent('Loading…');
+  });
+
   it('renders all widgets when count is less than or equal to capacity', async () => {
     const m = mockApi({ onboardingDismissed: true });
     m.api.listWidgets.mockResolvedValueOnce(widgets(4));

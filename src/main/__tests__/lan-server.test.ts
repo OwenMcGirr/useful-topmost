@@ -52,6 +52,7 @@ describe('lan-server', () => {
     const { widgets, uuid } = await createWidget(root);
     await widgets.setPinned(uuid, true);
     await widgets.setSize(uuid, 'wide');
+    await widgets.setSummary(uuid, { name: 'Local Weather', sources: ['Open-Meteo'] });
     await widgets.setProviders(uuid, ['secret-provider']);
     const controller = createLanServerController({ widgets, secrets: createSecretsStore(root) });
     const state = await controller.applyConfig({ enabled: true, port: 0 });
@@ -63,6 +64,7 @@ describe('lan-server', () => {
         prompt: 'weather',
         pinned: true,
         size: 'wide',
+        summary: { name: 'Local Weather', sources: ['Open-Meteo'] },
         state: 'live'
       })]);
       expect(body[0].selectedProviderIds).toBeUndefined();
@@ -259,6 +261,18 @@ describe('lan-server', () => {
       const client = await readText(`http://127.0.0.1:${state.port}/lan-client.js`);
       expect(client.body).toContain('function updateTile');
       expect(client.body).toContain('LIVE_RELOAD_INTERVAL_MS');
+      expect(client.body).toContain('function updateBottomStrip');
+      expect(client.body).toContain('widget-strip');
+      expect(client.body).toContain('function widgetDisplayName');
+      expect(client.body).toContain('function formatUpdatedAt');
+      expect(client.body).toContain('function widgetStatusLabel');
+      expect(client.body).toContain('Widget details');
+      expect(client.body).toContain('Updated at');
+      expect(client.body).toContain('Loading…');
+      expect(client.body).toContain('Building…');
+      expect(client.body).toContain('appendContentBeforeStrip');
+      expect(client.body).toContain('section.__latestWidget');
+      expect(client.body).toContain('updateBottomStrip(section);');
       expect(client.body).toContain('function refreshIntervalMs');
       expect(client.body).toContain('?rev=');
       expect(client.body).toContain('if (section !== cursor) nextGrid.insertBefore(section, cursor)');
@@ -268,6 +282,26 @@ describe('lan-server', () => {
       expect(client.body).not.toContain("root.innerHTML = '<main class=\"grid\">'");
       expect(client.body).not.toContain('nextGrid.appendChild(section)');
       expect(client.body).not.toContain('<iframe title="');
+    } finally {
+      await controller.stop();
+    }
+  });
+
+  it('serves LAN HTML with bottom strip styles', async () => {
+    const root = await freshRoot();
+    const { widgets } = await createWidget(root);
+    const controller = createLanServerController({ widgets, secrets: createSecretsStore(root) });
+    const state = await controller.applyConfig({ enabled: true, port: 0 });
+    try {
+      const html = await readText(`http://127.0.0.1:${state.port}/`);
+      expect(html.body).toContain('.widget-strip');
+      expect(html.body).toContain('.widget-strip-name');
+      expect(html.body).toContain('.widget-strip-meta');
+      expect(html.body).toContain('iframe { width: 100%; flex: 1 1 0; min-height: 0;');
+      expect(html.body).toContain('.placeholder { width: 100%; flex: 1 1 0; min-height: 0;');
+      expect(html.body).toContain('flex: 0 0 28px; height: 28px');
+      expect(html.body).toContain('z-index: 1');
+      expect(html.body).toContain('.tile { position: relative; display: flex; flex-direction: column;');
     } finally {
       await controller.stop();
     }

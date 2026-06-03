@@ -51,6 +51,26 @@ function widgetState(widget) {
   return widget.state === 'building' ? 'building' : 'live';
 }
 
+function widgetDisplayName(widget) {
+  const name = widget && widget.summary && typeof widget.summary.name === 'string'
+    ? widget.summary.name.trim()
+    : '';
+  if (name) return name;
+  const prompt = String(widget.prompt || '').trim();
+  return prompt || 'Widget';
+}
+
+function formatUpdatedAt(timestamp) {
+  return 'Updated at ' + new Date(Number(timestamp)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function widgetStatusLabel(section, widget) {
+  const state = widgetState(widget);
+  if (state === 'building') return 'Building…';
+  const updatedAt = section.dataset.updatedAt;
+  return updatedAt ? formatUpdatedAt(updatedAt) : 'Loading…';
+}
+
 function refreshIntervalMs(widget) {
   if (widget.refreshTtlMs === 0) return LIVE_RELOAD_INTERVAL_MS;
   if (Number.isFinite(widget.refreshTtlMs) && widget.refreshTtlMs > 0) return widget.refreshTtlMs;
@@ -97,13 +117,54 @@ function createTile(widget) {
   return section;
 }
 
+function updateBottomStrip(section, widget) {
+  if (widget) section.__latestWidget = widget;
+  const currentWidget = widget || section.__latestWidget || {};
+  let strip = section.querySelector('.widget-strip');
+  if (!strip) {
+    strip = document.createElement('div');
+    strip.className = 'widget-strip';
+    strip.setAttribute('aria-label', 'Widget details');
+
+    const name = document.createElement('span');
+    name.className = 'widget-strip-name';
+    strip.appendChild(name);
+
+    const meta = document.createElement('span');
+    meta.className = 'widget-strip-meta';
+    strip.appendChild(meta);
+
+    section.appendChild(strip);
+  }
+
+  const name = strip.querySelector('.widget-strip-name');
+  const meta = strip.querySelector('.widget-strip-meta');
+  const label = widgetDisplayName(currentWidget);
+  if (name) {
+    name.textContent = label;
+    name.setAttribute('title', label);
+  }
+  if (meta) meta.textContent = widgetStatusLabel(section, currentWidget);
+}
+
+function appendContentBeforeStrip(section, node) {
+  const strip = section.querySelector('.widget-strip');
+  if (strip) {
+    section.insertBefore(node, strip);
+  } else {
+    section.appendChild(node);
+  }
+}
+
 function updateTile(section, widget) {
   section.className = sizeClass(widget.size);
   const state = widgetState(widget);
   section.dataset.state = state;
+  updateBottomStrip(section, widget);
 
   if (state === 'building') {
     delete section.dataset.lastReloadAt;
+    delete section.dataset.updatedAt;
     const iframe = section.querySelector('iframe');
     if (iframe) iframe.remove();
 
@@ -128,7 +189,7 @@ function updateTile(section, widget) {
       copy.appendChild(title);
       copy.appendChild(subtitle);
       placeholder.appendChild(copy);
-      section.appendChild(placeholder);
+      appendContentBeforeStrip(section, placeholder);
     }
 
     const subtitle = placeholder.querySelector('.placeholder-subtitle');
@@ -145,7 +206,11 @@ function updateTile(section, widget) {
   const lastReloadAt = Number(section.dataset.lastReloadAt || '0');
   if (!iframe) {
     iframe = document.createElement('iframe');
-    section.appendChild(iframe);
+    iframe.addEventListener('load', function () {
+      section.dataset.updatedAt = String(Date.now());
+      updateBottomStrip(section);
+    });
+    appendContentBeforeStrip(section, iframe);
     section.dataset.lastReloadAt = String(now);
     iframe.src = widgetSrc(widget);
   } else if (!iframe.getAttribute('src')) {
@@ -213,14 +278,17 @@ const INDEX_HTML = `<!doctype html>
   <style>
     html, body { margin: 0; min-height: 100%; background: #0d1117; color: #e6edf3; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 400px)); grid-auto-rows: 260px; gap: 16px; padding: 20px; justify-content: center; align-content: start; }
-    .tile { background: #161b22; border: 1px solid #30363d; border-radius: 6px; overflow: hidden; min-width: 0; }
+    .tile { position: relative; display: flex; flex-direction: column; background: #161b22; border: 1px solid #30363d; border-radius: 6px; overflow: hidden; min-width: 0; min-height: 0; }
     .tile-wide { grid-column: span 2; }
     .tile-large { grid-column: span 2; grid-row: span 2; }
-    iframe { width: 100%; height: 100%; border: 0; display: block; background: #161b22; }
-    .placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 20px; color: #8b949e; text-align: left; }
+    iframe { width: 100%; flex: 1 1 0; min-height: 0; border: 0; display: block; background: #161b22; }
+    .placeholder { width: 100%; flex: 1 1 0; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 20px; color: #8b949e; text-align: left; }
     .placeholder-title { color: #e6edf3; font-size: 14px; font-weight: 600; }
     .placeholder-subtitle { margin-top: 4px; max-width: 280px; color: #8b949e; font-size: 12px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .spinner { width: 16px; height: 16px; border: 2px solid #30363d; border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.8s linear infinite; flex: 0 0 auto; }
+    .widget-strip { flex: 0 0 28px; height: 28px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 10px; background: linear-gradient(180deg, rgba(13, 17, 23, 0), rgba(13, 17, 23, 0.9) 38%, rgba(13, 17, 23, 0.94)); color: #8b949e; font-size: 11px; box-sizing: border-box; z-index: 1; }
+    .widget-strip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c9d1d9; }
+    .widget-strip-meta { flex: 0 0 auto; color: #8b949e; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .empty { min-height: 100vh; display: flex; align-items: center; justify-content: center; color: #8b949e; font-size: 14px; }
     @media (max-width: 760px) {

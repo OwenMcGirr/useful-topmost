@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import Tile from '../Tile';
 
@@ -26,7 +26,7 @@ describe('Tile', () => {
         onRetry={() => {}}
       />
     );
-    expect(screen.getByText(/building/i)).toBeInTheDocument();
+    expect(screen.getByText(/Building widget…/i)).toBeInTheDocument();
   });
 
   it('building tile shows a Cancel button that calls onCancel', async () => {
@@ -71,6 +71,117 @@ describe('Tile', () => {
     const wv = container.querySelector('webview');
     expect(wv).not.toBeNull();
     expect(wv!.getAttribute('src')).toBe('file:///path/index.html');
+  });
+
+  it('renders bottom strip with summary name and updated-at time after load', async () => {
+    const { container } = render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'live' }}
+        htmlUrl="file:///path/index.html"
+        widgetPreloadUrl=""
+        summary={{ name: 'Local Weather', sources: ['Open-Meteo'] }}
+        refreshTtlMs={300_000}
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+      />
+    );
+    const strip = screen.getByLabelText('Widget details');
+    expect(strip).toHaveTextContent('Local Weather');
+    expect(strip).toHaveTextContent('Loading…');
+    container.querySelector('webview')?.dispatchEvent(new Event('did-finish-load'));
+    await waitFor(() => expect(strip).toHaveTextContent(/Updated at/));
+  });
+
+  it('bottom strip falls back to prompt', () => {
+    render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'live' }}
+        htmlUrl="file:///path/index.html"
+        widgetPreloadUrl=""
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+      />
+    );
+    const strip = screen.getByLabelText('Widget details');
+    expect(strip).toHaveTextContent('show weather');
+    expect(strip).toHaveTextContent('Loading…');
+  });
+
+  it('bottom strip renders for building and error states', () => {
+    const { rerender } = render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'building' }}
+        htmlUrl=""
+        widgetPreloadUrl=""
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+      />
+    );
+    expect(screen.getByLabelText('Widget details')).toHaveTextContent('show weather');
+
+    rerender(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'error', message: 'boom' }}
+        htmlUrl=""
+        widgetPreloadUrl=""
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+      />
+    );
+    expect(screen.getByLabelText('Widget details')).toHaveTextContent('show weather');
+  });
+
+  it('live webview fills the content area above the bottom strip', () => {
+    const { container } = render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'live' }}
+        htmlUrl="file:///path/index.html"
+        widgetPreloadUrl=""
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+      />
+    );
+    const webview = container.querySelector('webview') as HTMLElement;
+    expect(webview.style.width).toBe('100%');
+    expect(webview.style.height).toBe('100%');
+    expect(webview.style.position).toBe('');
+    expect(webview.style.inset).toBe('');
+    expect(screen.getByLabelText('Widget details')).toHaveStyle({ flex: '0 0 auto', height: '28px', zIndex: '1' });
   });
 
   it('error state shows a friendly title; See details reveals the raw message', async () => {
