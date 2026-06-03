@@ -235,18 +235,24 @@ describe('lan-server', () => {
     }
   });
 
-  it('does not expose local exec in the widget shim', async () => {
+  it('exposes a non-executing local exec stub in the widget shim', async () => {
     const root = await freshRoot();
     const { widgets } = await createWidget(root);
     const controller = createLanServerController({ widgets, secrets: createSecretsStore(root) });
     const state = await controller.applyConfig({ enabled: true, port: 0 });
     try {
       const shim = await readText(`http://127.0.0.1:${state.port}/lan-widget-shim.js`);
-      expect(shim.body).toContain('window.local = undefined');
+      expect(shim.body).toContain('window.appFetch');
+      expect(shim.body).toContain('window.cache');
+      expect(shim.body).toContain('window.local');
+      expect(shim.body).toContain('async exec()');
+      expect(shim.body).toContain('Local exec is not available on the LAN dashboard.');
       expect(shim.body).toContain('ttlOrFetcher');
       expect(shim.body).toContain('window.cache.get requires a fetcher');
       expect(shim.body).toContain('ttlMs=');
-      expect(shim.body).not.toContain('exec:');
+      expect(shim.body).not.toContain('/exec');
+      expect(shim.body).not.toContain('child_process');
+      expect(shim.body).not.toContain('ipcRenderer.invoke');
     } finally {
       await controller.stop();
     }

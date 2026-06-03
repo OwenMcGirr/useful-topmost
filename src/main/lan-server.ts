@@ -401,7 +401,17 @@ const WIDGET_SHIM_JS = `
     }
   };
 
-  window.local = undefined;
+  window.local = {
+    async exec() {
+      return {
+        ok: false,
+        stdout: '',
+        exitCode: null,
+        truncated: false,
+        error: 'Local exec is not available on the LAN dashboard.'
+      };
+    }
+  };
 }());
 `;
 
