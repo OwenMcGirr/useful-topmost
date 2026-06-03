@@ -157,6 +157,27 @@ There's no end-to-end Electron test; the manual smoke test (open the
 app, create a widget, restart, confirm it persists) is the integration
 test for now.
 
+## WinGet
+
+Useful Topmost can be submitted to the Windows Package Manager Community
+Repository after a stable GitHub Release is published. Generate the
+manifest files from the release installer:
+
+```powershell
+npm run winget:manifest -- -Version 2026.1.0
+winget validate winget-manifests\manifests\o\OwenMcGirr\UsefulTopmost\2026.1.0
+```
+
+The manifest helper uses the expected GitHub Release asset URL:
+
+```text
+https://github.com/OwenMcGirr/useful-topmost/releases/download/v2026.1.0/useful-topmost-2026.1.0-win-x64.exe
+```
+
+Submit the generated manifest folder to `microsoft/winget-pkgs` under
+`manifests\o\OwenMcGirr\UsefulTopmost\<version>\` after validating the
+installer supports silent install and clean uninstall.
+
 ## Known limits
 
 - **Keyless APIs only.** No secrets management; if a widget needs an

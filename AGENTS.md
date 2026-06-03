@@ -39,6 +39,28 @@ After the tag is pushed, close the milestone for that release so it stops accept
 gh api repos/:owner/:repo/milestones/<number> --method PATCH -f state=closed
 ```
 
+### WinGet submission
+
+Submit WinGet only for stable releases, not prerelease tags. After the GitHub Release has published the Windows installer, generate the WinGet manifests:
+
+```powershell
+npm run winget:manifest -- -Version 2026.1.0
+winget validate winget-manifests\manifests\o\OwenMcGirr\UsefulTopmost\2026.1.0
+```
+
+The script writes the `microsoft/winget-pkgs` folder layout under `winget-manifests\`. Copy that manifest folder into a fork or branch of `microsoft/winget-pkgs`, run the repository sandbox test, then open a PR to `microsoft/winget-pkgs`.
+
+Expected package identity:
+
+```yaml
+PackageIdentifier: OwenMcGirr.UsefulTopmost
+PackageName: Useful Topmost
+Publisher: Owen McGirr
+InstallerType: nullsoft
+```
+
+Before submitting, verify the Windows installer supports silent install and clean uninstall. The WinGet manifest must reference the direct GitHub Release asset URL and exact SHA256 for that asset.
+
 ## Design language
 
 - Sentence case for all user-facing text — headings, navigation, buttons, labels, placeholders, status. Acronyms (API, URL, HTTP, NSIS) keep their canonical case.
