@@ -7,7 +7,7 @@ describe('WelcomeOverlay', () => {
   it('renders headline, intro, and all three example prompt chips', () => {
     render(<WelcomeOverlay onDismiss={() => {}} onUseExample={() => {}} />);
 
-    expect(screen.getByText(/welcome to useful-topmost/i)).toBeInTheDocument();
+    expect(screen.getByText(/welcome to Useful Topmost/i)).toBeInTheDocument();
     for (const prompt of EXAMPLE_PROMPTS) {
       expect(screen.getByText(prompt)).toBeInTheDocument();
     }
@@ -43,7 +43,7 @@ describe('WelcomeOverlay', () => {
     const onDismiss = vi.fn();
     render(<WelcomeOverlay onDismiss={onDismiss} onUseExample={() => {}} />);
 
-    await userEvent.click(screen.getByText(/welcome to useful-topmost/i));
+    await userEvent.click(screen.getByText(/welcome to Useful Topmost/i));
     expect(onDismiss).not.toHaveBeenCalled();
   });
 

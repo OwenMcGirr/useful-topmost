@@ -56,7 +56,7 @@ function desktopFile(execPath: string): string {
   return [
     '[Desktop Entry]',
     'Type=Application',
-    'Name=useful-topmost',
+    'Name=Useful Topmost',
     `Exec=${quoteDesktopExec(execPath)}`,
     'Terminal=false',
     'X-GNOME-Autostart-enabled=true',

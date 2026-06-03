@@ -186,7 +186,7 @@ const INDEX_HTML = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>useful-topmost</title>
+  <title>Useful Topmost</title>
   <style>
     html, body { margin: 0; min-height: 100%; background: #0d1117; color: #e6edf3; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 400px)); grid-auto-rows: 260px; gap: 16px; padding: 20px; justify-content: center; align-content: start; }
