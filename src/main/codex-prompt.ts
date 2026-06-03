@@ -67,6 +67,8 @@ Local commands:
 - For explicit local CLI tasks, use window.local.exec(command, args). Pass the executable name as command and each argument as a separate string in args; do not build shell command strings.
 - Example: const result = await window.local.exec("gh", ["api", "user", "--jq", ".login"]);
 - window.local.exec returns { ok, stdout, exitCode, truncated, error? }. It returns stdout only, has a 30 second timeout, and caps stdout at 256 KB.
+- window.local.exec may be unavailable or may return ok: false, especially on the LAN dashboard. Always check result.ok before using stdout.
+- If local exec fails or is unavailable, render a compact fallback state that uses the returned error instead of leaving the tile blank.
 - Always handle ok: false and truncated: true in the widget UI.
 - Prefer fetch() or window.appFetch() for ordinary web API calls. Use window.local.exec only when the user's request specifically needs local CLI access.
 

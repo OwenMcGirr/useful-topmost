@@ -26,6 +26,10 @@ describe('codex-prompt', () => {
     expect(CODEX_SYSTEM_PROMPT).toContain('["api", "user", "--jq", ".login"]');
     expect(CODEX_SYSTEM_PROMPT).toContain('30 second timeout');
     expect(CODEX_SYSTEM_PROMPT).toContain('256 KB');
+    expect(CODEX_SYSTEM_PROMPT).toContain('Always check result.ok before using stdout');
+    expect(CODEX_SYSTEM_PROMPT).toContain('may be unavailable or may return ok: false');
+    expect(CODEX_SYSTEM_PROMPT).toContain('LAN dashboard');
+    expect(CODEX_SYSTEM_PROMPT).toContain('render a compact fallback state');
     expect(CODEX_SYSTEM_PROMPT).toContain('do not build shell command strings');
   });
 
