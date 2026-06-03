@@ -107,6 +107,15 @@ describe('codex-prompt', () => {
     expect(CODEX_SYSTEM_PROMPT).not.toContain('bake it into a setInterval');
   });
 
+  it('instructs Codex not to render widget refresh timestamps', () => {
+    expect(CODEX_SYSTEM_PROMPT).toContain('Do not display app-refresh or generation timestamps inside the widget');
+    expect(CODEX_SYSTEM_PROMPT).toContain('Updated at');
+    expect(CODEX_SYSTEM_PROMPT).toContain('Last refreshed');
+    expect(CODEX_SYSTEM_PROMPT).toContain('Generated at');
+    expect(CODEX_SYSTEM_PROMPT).toContain('The app owns refresh cadence');
+    expect(CODEX_SYSTEM_PROMPT).toContain('It is okay to display times that are the primary subject of the widget');
+  });
+
   it('buildPrompt appends the user prompt after the system prompt', () => {
     const out = buildPrompt('show the weather');
     expect(out.startsWith(CODEX_SYSTEM_PROMPT)).toBe(true);
