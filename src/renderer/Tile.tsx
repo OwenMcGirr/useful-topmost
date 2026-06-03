@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TileState } from './types';
 import type { WidgetSize, WidgetFetchLogEntry } from '../preload';
 import { categorizeError } from './errors';
@@ -12,7 +12,7 @@ interface Props {
   pinned?: boolean;
   size?: WidgetSize;
   geekMode?: boolean;
-  summary?: { sources: string[] };
+  summary?: { sources: string[]; name?: string };
   refreshTtlMs?: number;
   onRefresh: () => void;
   onDismiss: () => void;
@@ -31,6 +31,7 @@ const SIZE_LABEL: Record<WidgetSize, string> = {
 
 const DEFAULT_REFRESH_TTL_MS = 3_600_000;
 const LIVE_RELOAD_INTERVAL_MS = 30_000;
+const STRIP_HEIGHT = 28;
 
 function frameReloadIntervalMs(refreshTtlMs: number | undefined): number {
   if (refreshTtlMs === 0) return LIVE_RELOAD_INTERVAL_MS;
@@ -40,8 +41,20 @@ function frameReloadIntervalMs(refreshTtlMs: number | undefined): number {
   return DEFAULT_REFRESH_TTL_MS;
 }
 
+function widgetDisplayName(prompt: string, summary?: { name?: string }): string {
+  const name = summary?.name?.trim();
+  if (name) return name;
+  const fallback = prompt.trim();
+  return fallback || 'Widget';
+}
+
+function formatUpdatedAt(date: Date): string {
+  return `Updated at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+}
+
 const TILE: React.CSSProperties = {
   position: 'relative', width: '100%', height: '100%',
+  display: 'flex', flexDirection: 'column',
   background: '#161b22', border: '1px solid #30363d',
   borderRadius: 6, overflow: 'hidden'
 };
@@ -74,6 +87,41 @@ const POPOVER: React.CSSProperties = {
   boxShadow: '0 8px 24px rgba(0,0,0,0.4)'
 };
 
+const CONTENT_AREA: React.CSSProperties = {
+  flex: '1 1 0',
+  minHeight: 0,
+  minWidth: 0,
+  position: 'relative'
+};
+
+const BOTTOM_STRIP: React.CSSProperties = {
+  flex: '0 0 auto',
+  height: STRIP_HEIGHT,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 8,
+  padding: '0 10px',
+  background: 'linear-gradient(180deg, rgba(13, 17, 23, 0), rgba(13, 17, 23, 0.9) 38%, rgba(13, 17, 23, 0.94))',
+  color: '#8b949e',
+  fontSize: 11,
+  zIndex: 1,
+  pointerEvents: 'none'
+};
+
+const STRIP_NAME: React.CSSProperties = {
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  color: '#c9d1d9'
+};
+
+const STRIP_META: React.CSSProperties = {
+  flex: '0 0 auto',
+  color: '#8b949e'
+};
+
 function BuildingState({ onCancel }: { onCancel: () => void }) {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -99,10 +147,30 @@ export default function Tile(props: Props) {
   const [infoOpen, setInfoOpen] = useState(false);
   const [errorDetailsOpen, setErrorDetailsOpen] = useState(false);
   const [fetchLog, setFetchLog] = useState<WidgetFetchLogEntry[]>([]);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
   useEffect(() => {
     if (props.state.kind !== 'error') setErrorDetailsOpen(false);
   }, [props.state.kind]);
+
+  useEffect(() => {
+    if (props.state.kind !== 'live') {
+      setUpdatedAt(null);
+      return;
+    }
+    setUpdatedAt(null);
+  }, [props.state.kind, props.htmlUrl]);
+
+  const handleWebviewLoaded = useCallback(() => {
+    setUpdatedAt(new Date());
+  }, []);
+
+  const handleWebviewRef = useCallback((node: HTMLElement | null) => {
+    const previous = wvRef.current;
+    if (previous) previous.removeEventListener('did-finish-load', handleWebviewLoaded);
+    wvRef.current = node;
+    if (node) node.addEventListener('did-finish-load', handleWebviewLoaded);
+  }, [handleWebviewLoaded]);
 
   useEffect(() => {
     if (!infoOpen || !props.geekMode) return;
@@ -163,6 +231,10 @@ export default function Tile(props: Props) {
     }
     setConfirmingDelete(true);
   };
+  const displayName = widgetDisplayName(props.prompt, props.summary);
+  const statusLabel = props.state.kind === 'live'
+    ? updatedAt === null ? 'Loading…' : formatUpdatedAt(updatedAt)
+    : props.state.kind === 'building' ? 'Building…' : 'Error';
 
   return (
     <div className="tile" style={TILE}>
@@ -251,54 +323,61 @@ export default function Tile(props: Props) {
         </div>
       )}
 
-      {props.state.kind === 'building' && <BuildingState onCancel={props.onCancel} />}
+      <div style={CONTENT_AREA}>
+        {props.state.kind === 'building' && <BuildingState onCancel={props.onCancel} />}
 
-      {props.state.kind === 'live' && (
-        <webview
-          ref={wvRef}
-          src={props.htmlUrl}
-          preload={props.widgetPreloadUrl}
-          webpreferences="contextIsolation=yes, nodeIntegration=no"
-          style={{ width: '100%', height: '100%', border: 0 }}
-        />
-      )}
+        {props.state.kind === 'live' && (
+          <webview
+            ref={handleWebviewRef}
+            src={props.htmlUrl}
+            preload={props.widgetPreloadUrl}
+            webpreferences="contextIsolation=yes, nodeIntegration=no"
+            style={{ width: '100%', height: '100%', border: 0 }}
+          />
+        )}
 
-      {props.state.kind === 'error' && (() => {
-        const friendly = categorizeError(props.state.message);
-        return (
-          <div
-            role="alert"
-            style={{ padding: 16, fontSize: 13, color: '#e6edf3', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}
-          >
-            <div style={{ color: '#f85149', fontSize: 14, fontWeight: 600 }}>{friendly.title}</div>
-            {friendly.advice && <div style={{ opacity: 0.85 }}>{friendly.advice}</div>}
-            <button
-              style={{ ...BTN, alignSelf: 'flex-start' }}
-              onClick={() => setErrorDetailsOpen((v) => !v)}
-              aria-expanded={errorDetailsOpen}
+        {props.state.kind === 'error' && (() => {
+          const friendly = categorizeError(props.state.message);
+          return (
+            <div
+              role="alert"
+              style={{ padding: 16, fontSize: 13, color: '#e6edf3', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}
             >
-              {errorDetailsOpen ? 'Hide details' : 'See details'}
-            </button>
-            {errorDetailsOpen && (
-              <pre
-                style={{
-                  margin: 0,
-                  padding: 8,
-                  background: '#0d1117',
-                  border: '1px solid #30363d',
-                  borderRadius: 4,
-                  fontSize: 12,
-                  whiteSpace: 'pre-wrap',
-                  maxHeight: 160,
-                  overflowY: 'auto'
-                }}
+              <div style={{ color: '#f85149', fontSize: 14, fontWeight: 600 }}>{friendly.title}</div>
+              {friendly.advice && <div style={{ opacity: 0.85 }}>{friendly.advice}</div>}
+              <button
+                style={{ ...BTN, alignSelf: 'flex-start' }}
+                onClick={() => setErrorDetailsOpen((v) => !v)}
+                aria-expanded={errorDetailsOpen}
               >
-                {props.state.message}
-              </pre>
-            )}
-          </div>
-        );
-      })()}
+                {errorDetailsOpen ? 'Hide details' : 'See details'}
+              </button>
+              {errorDetailsOpen && (
+                <pre
+                  style={{
+                    margin: 0,
+                    padding: 8,
+                    background: '#0d1117',
+                    border: '1px solid #30363d',
+                    borderRadius: 4,
+                    fontSize: 12,
+                    whiteSpace: 'pre-wrap',
+                    maxHeight: 160,
+                    overflowY: 'auto'
+                  }}
+                >
+                  {props.state.message}
+                </pre>
+              )}
+            </div>
+          );
+        })()}
+      </div>
+
+      <div style={BOTTOM_STRIP} aria-label="Widget details">
+        <span style={STRIP_NAME} title={displayName}>{displayName}</span>
+        <span style={STRIP_META}>{statusLabel}</span>
+      </div>
     </div>
   );
 }

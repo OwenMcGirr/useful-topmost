@@ -26,7 +26,7 @@ interface TileEntry {
   pinned?: boolean;
   size?: TileSize;
   selectedProviderIds?: string[];
-  summary?: { sources: string[] };
+  summary?: { sources: string[]; name?: string };
   refreshTtlMs?: number;
 }
 
