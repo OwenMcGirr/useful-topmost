@@ -540,6 +540,43 @@ describe('Dashboard', () => {
     expect(await screen.findByText(/building widget/i)).toBeInTheDocument();
   });
 
+  it('closes the new-widget chat panel only after the created widget is ready', async () => {
+    const m = mockApi();
+    (window as any).api = m.api;
+
+    render(<Dashboard />);
+    await screen.findByRole('button', { name: /new widget/i });
+
+    await userEvent.click(screen.getByRole('button', { name: /new widget/i }));
+    await userEvent.type(screen.getByLabelText(/widget message/i), 'show weather');
+    await userEvent.click(screen.getByRole('button', { name: /send/i }));
+
+    expect(await screen.findByText(/building widget/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/widget message/i)).toBeInTheDocument();
+    expect(screen.queryByText(/closing in 3s/i)).toBeNull();
+
+    vi.useFakeTimers();
+    await act(async () => {
+      m.fireReady('new-uuid');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/closing in 3s/i)).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(screen.queryByLabelText(/widget message/i)).toBeNull();
+  });
+
   it('flips tile from building to live on widget:ready', async () => {
     const m = mockApi();
     (window as any).api = m.api;
