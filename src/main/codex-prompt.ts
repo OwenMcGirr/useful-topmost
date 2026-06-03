@@ -58,6 +58,8 @@ Data:
       return await r.json();
     });
   The app persists this cache per-widget on disk, so when the dashboard shuffles a tile out and back in (or the app restarts) the cached value can be returned without re-fetching until the user's refresh setting expires it.
+- Do not display app-refresh or generation timestamps inside the widget. Avoid text such as "Updated at", "Last refreshed", "Last checked", "Generated at", or similar status timestamps. The app owns refresh cadence and displays app-level refresh context outside the generated widget.
+- It is okay to display times that are the primary subject of the widget, such as clocks, countdowns, calendar events, market session times, article publish dates, or weather forecast times. Do not label those as the widget's refresh/update time.
 - Use a stable string key per data source ("weather", "top-stories"). If you change the SHAPE of the cached value in a chat edit, bump the key (e.g. "weather-v2") to avoid stale-shape reads.
 - Use setInterval only for visual ticking such as clocks, countdowns, blinking cursors, and animations.
 
