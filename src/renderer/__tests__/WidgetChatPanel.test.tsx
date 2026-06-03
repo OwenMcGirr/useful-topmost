@@ -39,7 +39,22 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
+
+function mockScrollIntoView() {
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: vi.fn()
+  });
+  return HTMLElement.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+}
+
+function setScrollMetrics(el: HTMLElement, metrics: { scrollHeight: number; clientHeight: number; scrollTop: number }) {
+  Object.defineProperty(el, 'scrollHeight', { configurable: true, value: metrics.scrollHeight });
+  Object.defineProperty(el, 'clientHeight', { configurable: true, value: metrics.clientHeight });
+  Object.defineProperty(el, 'scrollTop', { configurable: true, writable: true, value: metrics.scrollTop });
+}
 
 describe('WidgetChatPanel', () => {
   it('renders nothing when closed', () => {
@@ -89,6 +104,26 @@ describe('WidgetChatPanel', () => {
     expect(container.querySelector('webview')?.getAttribute('src')).toContain('file:///u1/index.html');
   });
 
+  it('scrolls to the bottom when edit chat loads', async () => {
+    const scrollIntoView = mockScrollIntoView();
+    const { api } = mockApi();
+    (window as any).api = api;
+    render(
+      <WidgetChatPanel
+        open={true}
+        mode="edit"
+        widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
+        widgetPreloadUrl=""
+        onClose={() => {}}
+        onCreated={() => {}}
+        onSent={() => {}}
+      />
+    );
+
+    expect(await screen.findByText(/make a clock/i)).toBeInTheDocument();
+    expect(scrollIntoView).toHaveBeenCalled();
+  });
+
   it('empty message cannot send', async () => {
     const { api } = mockApi();
     (window as any).api = api;
@@ -110,6 +145,21 @@ describe('WidgetChatPanel', () => {
     await waitFor(() => expect(api.chatStartWidget).toHaveBeenCalledWith('show weather', [], 3_600_000));
     expect(onCreated).toHaveBeenCalledWith('new-widget', 'show weather', [], 3_600_000);
     expect(screen.getByText(/building preview/i)).toBeInTheDocument();
+  });
+
+  it('scrolls to the bottom after sending a create message', async () => {
+    const scrollIntoView = mockScrollIntoView();
+    const { api } = mockApi();
+    (window as any).api = api;
+    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+    scrollIntoView.mockClear();
+
+    await userEvent.type(screen.getByLabelText(/widget message/i), 'show weather');
+    await userEvent.click(screen.getByRole('button', { name: /send/i }));
+
+    expect(await screen.findByText('show weather')).toBeInTheDocument();
+    expect(screen.getByText('Building...')).toBeInTheDocument();
+    expect(scrollIntoView).toHaveBeenCalled();
   });
 
   it('does not start the close countdown immediately after creating a widget', async () => {
@@ -557,5 +607,69 @@ describe('WidgetChatPanel', () => {
       vi.advanceTimersByTime(4000);
     });
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-scroll a Codex update when the user has scrolled up', async () => {
+    const scrollIntoView = mockScrollIntoView();
+    const m = mockApi();
+    (window as any).api = m.api;
+    render(
+      <WidgetChatPanel
+        open={true}
+        mode="edit"
+        widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
+        widgetPreloadUrl=""
+        onClose={() => {}}
+        onCreated={() => {}}
+        onSent={() => {}}
+      />
+    );
+
+    await screen.findByText(/make a clock/i);
+    scrollIntoView.mockClear();
+    const transcript = screen.getByLabelText('Chat transcript');
+    setScrollMetrics(transcript, { scrollHeight: 1000, clientHeight: 300, scrollTop: 100 });
+    fireEvent.scroll(transcript);
+
+    await act(async () => {
+      m.fireReady('u1');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(m.api.htmlUrl).toHaveBeenCalledWith('u1'));
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it('auto-scrolls a Codex update when the user is near the bottom', async () => {
+    const scrollIntoView = mockScrollIntoView();
+    const m = mockApi();
+    (window as any).api = m.api;
+    render(
+      <WidgetChatPanel
+        open={true}
+        mode="edit"
+        widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
+        widgetPreloadUrl=""
+        onClose={() => {}}
+        onCreated={() => {}}
+        onSent={() => {}}
+      />
+    );
+
+    await screen.findByText(/make a clock/i);
+    scrollIntoView.mockClear();
+    const transcript = screen.getByLabelText('Chat transcript');
+    setScrollMetrics(transcript, { scrollHeight: 1000, clientHeight: 300, scrollTop: 680 });
+    fireEvent.scroll(transcript);
+
+    await act(async () => {
+      m.fireReady('u1');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(m.api.htmlUrl).toHaveBeenCalledWith('u1'));
+    expect(scrollIntoView).toHaveBeenCalled();
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { WidgetChatMessage } from '../preload';
 import type { PublicProvider } from '../main/secrets-store';
 import { categorizeError, stripFailedPrefix } from './errors';
@@ -151,6 +151,10 @@ function cacheBust(url?: string): string {
   return `${url}${url.includes('?') ? '&' : '?'}rev=${Date.now()}`;
 }
 
+function isNearBottom(el: HTMLElement): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= 48;
+}
+
 export default function WidgetChatPanel({
   open,
   mode,
@@ -177,6 +181,9 @@ export default function WidgetChatPanel({
   const [refreshDirty, setRefreshDirty] = useState<boolean>(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const transcriptEndRef = useRef<HTMLDivElement | null>(null);
+  const shouldAutoScrollRef = useRef(true);
   const [autoCloseSeconds, setAutoCloseSeconds] = useState<number | null>(null);
   const createdUuidRef = useRef<string | null>(null);
   const autoCloseArmedRef = useRef(false);
@@ -211,6 +218,7 @@ export default function WidgetChatPanel({
   useEffect(() => {
     if (!open) return;
     const isCreatedWidgetTransition = widget?.uuid !== undefined && widget.uuid === createdUuidRef.current;
+    shouldAutoScrollRef.current = true;
     setValue(initialMessage);
     setCurrentUuid(widget?.uuid ?? null);
     setPreviewUrl(cacheBust(widget?.htmlUrl));
@@ -303,6 +311,13 @@ export default function WidgetChatPanel({
 
   const displayMessages = useMemo(() => messages, [messages]);
 
+  useLayoutEffect(() => {
+    if (!open) return;
+    if (!shouldAutoScrollRef.current) return;
+    if (typeof transcriptEndRef.current?.scrollIntoView !== 'function') return;
+    transcriptEndRef.current.scrollIntoView({ block: 'end' });
+  }, [open, displayMessages]);
+
   useEffect(() => {
     if (autoCloseSeconds === null) return;
     if (autoCloseSeconds <= 0) {
@@ -324,6 +339,12 @@ export default function WidgetChatPanel({
     if (autoCloseSeconds === null) return;
     autoCloseArmedRef.current = false;
     setAutoCloseSeconds(null);
+  };
+
+  const handleTranscriptScroll = () => {
+    const el = transcriptRef.current;
+    if (!el) return;
+    shouldAutoScrollRef.current = isNearBottom(el);
   };
 
   const persistSelection = (next: Set<string>) => {
@@ -382,6 +403,7 @@ export default function WidgetChatPanel({
   const send = async () => {
     const trimmed = value.trim();
     if (!trimmed || submitting || building) return;
+    shouldAutoScrollRef.current = true;
     setSubmitting(true);
     setValue('');
     setMessages((prev) => [
@@ -453,7 +475,12 @@ export default function WidgetChatPanel({
         )}
       </div>
 
-      <div style={TRANSCRIPT}>
+      <div
+        ref={transcriptRef}
+        style={TRANSCRIPT}
+        aria-label="Chat transcript"
+        onScroll={handleTranscriptScroll}
+      >
         {displayMessages.length === 0 ? (
           <div style={{ color: '#8b949e', fontSize: 13 }}>Describe what this widget should show.</div>
         ) : (
@@ -543,6 +570,7 @@ export default function WidgetChatPanel({
             );
           })
         )}
+        <div ref={transcriptEndRef} aria-hidden />
       </div>
 
       <div style={PROVIDERS_BOX}>
