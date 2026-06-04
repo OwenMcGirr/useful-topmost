@@ -34,6 +34,9 @@ export interface WidgetWebhookInfo {
   enabled: boolean;
   path: string;
   urlCandidates: string[];
+  localUrlCandidates: string[];
+  publicUrl?: string;
+  publicBaseUrl?: string;
   cacheKey: 'webhook';
   lastReceivedAt?: string;
 }
@@ -100,6 +103,8 @@ const api = {
     ipcRenderer.invoke('widget:setRefreshMode', uuid, mode, ttlMs) as Promise<{ ok: true } | { ok: false; error: string }>,
   getWidgetWebhook: (uuid: string) =>
     ipcRenderer.invoke('widget:getWebhook', uuid) as Promise<WidgetWebhookInfo | { ok: false; error: string }>,
+  testWidgetWebhook: (uuid: string) =>
+    ipcRenderer.invoke('widget:testWebhook', uuid) as Promise<{ ok: true; receivedAt: string } | { ok: false; error: string }>,
   rotateWidgetWebhookToken: (uuid: string) =>
     ipcRenderer.invoke('widget:rotateWebhookToken', uuid) as Promise<WidgetWebhookInfo | { ok: false; error: string }>,
   listWidgets: () => ipcRenderer.invoke('widget:list') as Promise<Widget[]>,
@@ -152,13 +157,16 @@ const api = {
       geekMode: boolean;
       lanServer: { enabled: boolean; port: number };
       updateChannel: UpdateChannel;
+      webhookPublicBaseUrl?: string;
     }>,
     setGeekMode: (value: boolean) =>
       ipcRenderer.invoke('prefs:setGeekMode', value) as Promise<{ ok: true } | { ok: false; error: string }>,
     setLanServer: (value: { enabled: boolean; port: number }) =>
       ipcRenderer.invoke('prefs:setLanServer', value) as Promise<{ ok: true } | { ok: false; error: string }>,
     setUpdateChannel: (value: UpdateChannel) =>
-      ipcRenderer.invoke('prefs:setUpdateChannel', value) as Promise<{ ok: true } | { ok: false; error: string }>
+      ipcRenderer.invoke('prefs:setUpdateChannel', value) as Promise<{ ok: true } | { ok: false; error: string }>,
+    setWebhookPublicBaseUrl: (value: string | null) =>
+      ipcRenderer.invoke('prefs:setWebhookPublicBaseUrl', value) as Promise<{ ok: true } | { ok: false; error: string }>
   },
   lan: {
     getState: () => ipcRenderer.invoke('lan:getState') as Promise<LanServerState>

@@ -5,9 +5,11 @@ import LanSettings from '../LanSettings';
 
 function mockApi(opts: {
   prefs?: { enabled: boolean; port: number };
+  webhookPublicBaseUrl?: string;
   state?: { running: boolean; port: number; urls: string[]; error?: string };
   initialState?: { running: boolean; port: number; urls: string[]; error?: string };
   saveResult?: { ok: true } | { ok: false; error: string };
+  webhookSaveResult?: { ok: true } | { ok: false; error: string };
 } = {}) {
   const getState = vi.fn();
   if (opts.initialState) getState.mockResolvedValueOnce(opts.initialState);
@@ -17,10 +19,13 @@ function mockApi(opts: {
     prefs: {
       get: vi.fn(async () => ({
         geekMode: false,
-        lanServer: opts.prefs ?? { enabled: false, port: 32177 }
+        lanServer: opts.prefs ?? { enabled: false, port: 32177 },
+        updateChannel: 'stable',
+        ...(opts.webhookPublicBaseUrl ? { webhookPublicBaseUrl: opts.webhookPublicBaseUrl } : {})
       })),
       setLanServer: vi.fn(async () => opts.saveResult ?? { ok: true }),
-      setGeekMode: vi.fn(async () => ({ ok: true }))
+      setGeekMode: vi.fn(async () => ({ ok: true })),
+      setWebhookPublicBaseUrl: vi.fn(async () => opts.webhookSaveResult ?? { ok: true })
     },
     lan: {
       getState
@@ -78,5 +83,43 @@ describe('LanSettings', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Port must be between 1024 and 65535.');
     expect(api.prefs.setLanServer).not.toHaveBeenCalled();
+  });
+
+  it('saves a valid public webhook base URL as an HTTPS origin', async () => {
+    const api = mockApi();
+    (window as any).api = api;
+    render(<LanSettings />);
+
+    const input = await screen.findByLabelText('Public webhook base URL');
+    await userEvent.type(input, 'https://example.com/');
+    await userEvent.click(screen.getByRole('button', { name: 'Save local network settings' }));
+
+    await waitFor(() => expect(api.prefs.setWebhookPublicBaseUrl).toHaveBeenCalledWith('https://example.com'));
+  });
+
+  it('clears the public webhook base URL when the field is blank', async () => {
+    const api = mockApi({ webhookPublicBaseUrl: 'https://example.com' });
+    (window as any).api = api;
+    render(<LanSettings />);
+
+    const input = await screen.findByLabelText('Public webhook base URL');
+    expect(input).toHaveValue('https://example.com');
+    await userEvent.clear(input);
+    await userEvent.click(screen.getByRole('button', { name: 'Save local network settings' }));
+
+    await waitFor(() => expect(api.prefs.setWebhookPublicBaseUrl).toHaveBeenCalledWith(null));
+  });
+
+  it('rejects an invalid public webhook base URL with terminal punctuation', async () => {
+    const api = mockApi();
+    (window as any).api = api;
+    render(<LanSettings />);
+
+    const input = await screen.findByLabelText('Public webhook base URL');
+    await userEvent.type(input, 'http://example.com/path');
+    await userEvent.click(screen.getByRole('button', { name: 'Save local network settings' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Public webhook base URL must be an HTTPS origin.');
+    expect(api.prefs.setWebhookPublicBaseUrl).not.toHaveBeenCalled();
   });
 });

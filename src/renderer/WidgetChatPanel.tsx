@@ -182,6 +182,10 @@ function webhookSummary(info: WidgetWebhookInfo | null): WidgetWebhookSummary | 
   };
 }
 
+function terminalMessage(text: string): string {
+  return text.endsWith('.') ? text : `${text}.`;
+}
+
 function isNearBottom(el: HTMLElement): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= 48;
 }
@@ -213,6 +217,7 @@ export default function WidgetChatPanel({
   const [refreshTtlMs, setRefreshTtlMs] = useState<number>(DEFAULT_REFRESH_TTL_MS);
   const [refreshDirty, setRefreshDirty] = useState<boolean>(false);
   const [webhookInfo, setWebhookInfo] = useState<WidgetWebhookInfo | null>(null);
+  const [webhookTestStatus, setWebhookTestStatus] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
@@ -299,6 +304,7 @@ export default function WidgetChatPanel({
       setRefreshDirty(false);
     }
     setWebhookInfo(null);
+    setWebhookTestStatus(null);
     if (widget?.uuid && nextMode === 'event') {
       void window.api.getWidgetWebhook(widget.uuid).then((info) => {
         if ('ok' in info && info.ok === false) return;
@@ -431,6 +437,7 @@ export default function WidgetChatPanel({
           const info = await window.api.getWidgetWebhook(currentUuid);
           if (!('ok' in info && info.ok === false)) {
             setWebhookInfo(info);
+            setWebhookTestStatus(null);
             onRefreshChanged?.(currentUuid, refreshTtlMs, 'event', webhookSummary(info));
           }
         }
@@ -438,6 +445,7 @@ export default function WidgetChatPanel({
       return;
     }
     setWebhookInfo(null);
+    setWebhookTestStatus(null);
     if (value === '0') {
       setRefreshMode('live');
       setRefreshTtlMs(0);
@@ -468,6 +476,19 @@ export default function WidgetChatPanel({
     onClose();
   };
 
+  const testWebhook = async () => {
+    if (!currentUuid) return;
+    setWebhookTestStatus('Testing local webhook…');
+    const result = await window.api.testWidgetWebhook(currentUuid);
+    if (result.ok) {
+      setWebhookTestStatus('Test event received.');
+      const info = await window.api.getWidgetWebhook(currentUuid);
+      if (!('ok' in info && info.ok === false)) setWebhookInfo(info);
+      return;
+    }
+    setWebhookTestStatus(terminalMessage(result.error));
+  };
+
   if (!open) return null;
 
   const send = async () => {
@@ -495,6 +516,7 @@ export default function WidgetChatPanel({
             if (!('ok' in info && info.ok === false)) {
               createdWebhook = info;
               setWebhookInfo(info);
+              setWebhookTestStatus(null);
             }
           }
         }
@@ -679,14 +701,16 @@ export default function WidgetChatPanel({
             ))}
           </select>
         </label>
-        {refreshMode === 'event' && webhookInfo && (
-          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: '#8b949e' }}>
+        {refreshMode === 'event' && webhookInfo && (() => {
+          const localUrl = webhookInfo.localUrlCandidates[0] ?? webhookInfo.urlCandidates.find((url) => url.startsWith('http://')) ?? webhookInfo.path;
+          const publicUrl = webhookInfo.publicUrl;
+          const row = (label: string, url: string, copyLabel: string) => (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ flex: '0 0 auto' }}>Webhook URL</span>
+              <span style={{ flex: '0 0 112px' }}>{label}</span>
               <input
                 readOnly
-                value={webhookInfo.urlCandidates[0] ?? webhookInfo.path}
-                aria-label="Webhook URL"
+                value={url}
+                aria-label={label}
                 style={{
                   minWidth: 0,
                   flex: 1,
@@ -699,18 +723,53 @@ export default function WidgetChatPanel({
                 }}
               />
               <button
-                style={{ ...BTN, fontSize: 11, padding: '4px 8px' }}
-                onClick={() => void navigator.clipboard?.writeText(webhookInfo.urlCandidates[0] ?? webhookInfo.path)}
+                style={{ ...BTN, fontSize: 11, padding: '4px 8px', whiteSpace: 'nowrap' }}
+                onClick={() => void navigator.clipboard?.writeText(url)}
               >
-                Copy
+                {copyLabel}
               </button>
             </div>
-            <div>Cache key: webhook</div>
-            {webhookInfo.lastReceivedAt && (
-              <div>Last event: {new Date(webhookInfo.lastReceivedAt).toLocaleString()}</div>
-            )}
-          </div>
-        )}
+          );
+          return (
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 7, fontSize: 12, color: '#8b949e' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <strong style={{ color: '#e6edf3', fontWeight: 600 }}>Webhook setup</strong>
+                <span
+                  style={{
+                    border: `1px solid ${publicUrl ? '#2ea043' : '#d29922'}`,
+                    color: publicUrl ? '#7ee787' : '#f2cc60',
+                    borderRadius: 999,
+                    padding: '1px 7px',
+                    fontSize: 11
+                  }}
+                >
+                  {publicUrl ? 'Public' : 'Local only'}
+                </span>
+              </div>
+              <div>
+                {publicUrl
+                  ? 'External services can send events to the public webhook URL.'
+                  : 'This URL works on your local network. External services need a public URL.'}
+              </div>
+              {publicUrl && row('Public webhook URL', publicUrl, 'Copy public URL')}
+              {row('Local webhook URL', localUrl, 'Copy local URL')}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  style={{ ...BTN, fontSize: 11, padding: '4px 8px' }}
+                  onClick={() => void testWebhook()}
+                >
+                  Test local webhook
+                </button>
+                {webhookTestStatus && (
+                  <span role={webhookTestStatus.endsWith('.') ? undefined : 'status'}>{webhookTestStatus}</span>
+                )}
+              </div>
+              {webhookInfo.lastReceivedAt && (
+                <div>Last event: {new Date(webhookInfo.lastReceivedAt).toLocaleString()}</div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       <div style={PROVIDERS_BOX} aria-label="Provider selection">

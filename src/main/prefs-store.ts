@@ -10,6 +10,7 @@ export interface Prefs {
     port: number;
   };
   updateChannel: UpdateChannel;
+  webhookPublicBaseUrl?: string;
 }
 
 export interface PrefsStore {
@@ -17,6 +18,7 @@ export interface PrefsStore {
   setGeekMode(value: boolean): Promise<void>;
   setLanServer(value: Prefs['lanServer']): Promise<void>;
   setUpdateChannel(value: UpdateChannel): Promise<void>;
+  setWebhookPublicBaseUrl(value: string | null): Promise<void>;
 }
 
 export const DEFAULT_LAN_SERVER_PORT = 32177;
@@ -38,11 +40,26 @@ function validUpdateChannel(value: unknown): value is UpdateChannel {
   return value === 'stable' || value === 'prerelease';
 }
 
+export function normalizeWebhookPublicBaseUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim().replace(/\/+$/, '');
+  if (!trimmed) return undefined;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'https:') return undefined;
+    if (parsed.pathname !== '/' || parsed.search || parsed.hash) return undefined;
+    return parsed.origin;
+  } catch {
+    return undefined;
+  }
+}
+
 function normalizePrefs(parsed: Partial<Prefs> | null | undefined): Prefs {
   if (!parsed || typeof parsed !== 'object') return { ...DEFAULT_PREFS, lanServer: { ...DEFAULT_PREFS.lanServer } };
   const lanServer = typeof parsed.lanServer === 'object' && parsed.lanServer !== null
     ? parsed.lanServer
     : undefined;
+  const webhookPublicBaseUrl = normalizeWebhookPublicBaseUrl(parsed.webhookPublicBaseUrl);
 
   return {
     geekMode: typeof parsed.geekMode === 'boolean' ? parsed.geekMode : DEFAULT_PREFS.geekMode,
@@ -50,7 +67,8 @@ function normalizePrefs(parsed: Partial<Prefs> | null | undefined): Prefs {
       enabled: typeof lanServer?.enabled === 'boolean' ? lanServer.enabled : DEFAULT_PREFS.lanServer.enabled,
       port: validPort(lanServer?.port) ? lanServer.port : DEFAULT_PREFS.lanServer.port
     },
-    updateChannel: validUpdateChannel(parsed.updateChannel) ? parsed.updateChannel : DEFAULT_PREFS.updateChannel
+    updateChannel: validUpdateChannel(parsed.updateChannel) ? parsed.updateChannel : DEFAULT_PREFS.updateChannel,
+    ...(webhookPublicBaseUrl ? { webhookPublicBaseUrl } : {})
   };
 }
 
@@ -94,6 +112,19 @@ export function createPrefsStore(root: string): PrefsStore {
       if (!validUpdateChannel(value)) throw new Error('updateChannel must be stable or prerelease');
       const current = await read();
       await write({ ...current, updateChannel: value });
+    },
+
+    async setWebhookPublicBaseUrl(value: string | null) {
+      if (value === null || (typeof value === 'string' && value.trim() === '')) {
+        const current = await read();
+        const { webhookPublicBaseUrl: _ignored, ...next } = current;
+        await write(next);
+        return;
+      }
+      const normalized = normalizeWebhookPublicBaseUrl(value);
+      if (!normalized) throw new Error('public webhook base URL must be an HTTPS origin');
+      const current = await read();
+      await write({ ...current, webhookPublicBaseUrl: normalized });
     }
   };
 }
