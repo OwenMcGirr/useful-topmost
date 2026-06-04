@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import WidgetChatPanel from '../WidgetChatPanel';
+import WidgetWorkspace from '../WidgetWorkspace';
 
 function mockApi(opts: {
   providers?: Array<{ id: string; name: string; hostnames: string[] }>;
@@ -85,12 +85,12 @@ function setScrollMetrics(el: HTMLElement, metrics: { scrollHeight: number; clie
   Object.defineProperty(el, 'scrollTop', { configurable: true, writable: true, value: metrics.scrollTop });
 }
 
-describe('WidgetChatPanel', () => {
+describe('WidgetWorkspace', () => {
   it('renders nothing when closed', () => {
     const { api } = mockApi();
     (window as any).api = api;
     const { container } = render(
-      <WidgetChatPanel open={false} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />
+      <WidgetWorkspace open={false} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />
     );
     expect(container.textContent).toBe('');
   });
@@ -98,16 +98,39 @@ describe('WidgetChatPanel', () => {
   it('shows New widget in create mode with placeholder preview', () => {
     const { api } = mockApi();
     (window as any).api = api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+    render(<WidgetWorkspace open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
 
+    expect(screen.getByLabelText('Widget workspace')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Widget chat')).toBeNull();
     expect(screen.getByRole('heading', { name: /new widget/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /preview/i })).toBeInTheDocument();
+    expect(screen.getByLabelText('Preview pane')).toBeInTheDocument();
+    expect(screen.getByLabelText('Chat pane')).toBeInTheDocument();
+    expect(screen.getByLabelText('Chat transcript')).toBeInTheDocument();
     expect(screen.getByText(/preview will appear here/i)).toBeInTheDocument();
+  });
+
+  it('collapses advanced refresh and provider controls by default', () => {
+    const { api } = mockApi();
+    (window as any).api = api;
+    const { container } = render(
+      <WidgetWorkspace open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />
+    );
+
+    const sections = Array.from(container.querySelectorAll('details'));
+    const refresh = sections.find((section) => section.querySelector('summary')?.textContent === 'Refresh') as HTMLDetailsElement | undefined;
+    const providers = sections.find((section) => section.querySelector('summary')?.textContent === 'Providers') as HTMLDetailsElement | undefined;
+
+    expect(refresh).toBeDefined();
+    expect(providers).toBeDefined();
+    expect(refresh?.open).toBe(false);
+    expect(providers?.open).toBe(false);
   });
 
   it('focuses the widget message box when create mode opens', async () => {
     const { api } = mockApi();
     (window as any).api = api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+    render(<WidgetWorkspace open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
 
     const textarea = screen.getByLabelText(/widget message/i);
     await waitFor(() => expect(textarea).toHaveFocus());
@@ -117,7 +140,7 @@ describe('WidgetChatPanel', () => {
     const { api } = mockApi();
     (window as any).api = api;
     const { container } = render(
-      <WidgetChatPanel
+      <WidgetWorkspace
         open={true}
         mode="edit"
         widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
@@ -138,7 +161,7 @@ describe('WidgetChatPanel', () => {
     const { api } = mockApi();
     (window as any).api = api;
     render(
-      <WidgetChatPanel
+      <WidgetWorkspace
         open={true}
         mode="edit"
         widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
@@ -156,7 +179,7 @@ describe('WidgetChatPanel', () => {
   it('empty message cannot send', async () => {
     const { api } = mockApi();
     (window as any).api = api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+    render(<WidgetWorkspace open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
 
     expect(screen.getByRole('button', { name: /send/i })).toBeDisabled();
     expect(api.chatStartWidget).not.toHaveBeenCalled();
@@ -166,7 +189,7 @@ describe('WidgetChatPanel', () => {
     const { api } = mockApi();
     const onCreated = vi.fn();
     (window as any).api = api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={onCreated} onSent={() => {}} onDeleted={() => {}} />);
+    render(<WidgetWorkspace open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={onCreated} onSent={() => {}} onDeleted={() => {}} />);
 
     await userEvent.type(screen.getByLabelText(/widget message/i), 'show weather');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
@@ -180,7 +203,7 @@ describe('WidgetChatPanel', () => {
     const scrollIntoView = mockScrollIntoView();
     const { api } = mockApi();
     (window as any).api = api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+    render(<WidgetWorkspace open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
     scrollIntoView.mockClear();
 
     await userEvent.type(screen.getByLabelText(/widget message/i), 'show weather');
@@ -195,7 +218,7 @@ describe('WidgetChatPanel', () => {
     const { api } = mockApi();
     const onClose = vi.fn();
     (window as any).api = api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={onClose} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+    render(<WidgetWorkspace open={true} mode="create" widgetPreloadUrl="" onClose={onClose} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
 
     await userEvent.type(screen.getByLabelText(/widget message/i), 'show weather');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
@@ -211,7 +234,7 @@ describe('WidgetChatPanel', () => {
     const m = mockApi();
     const onClose = vi.fn();
     (window as any).api = m.api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={onClose} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+    render(<WidgetWorkspace open={true} mode="create" widgetPreloadUrl="" onClose={onClose} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
 
     await act(async () => {
       fireEvent.change(screen.getByLabelText(/widget message/i), { target: { value: 'show weather' } });
@@ -250,7 +273,7 @@ describe('WidgetChatPanel', () => {
     const m = mockApi();
     const onClose = vi.fn();
     (window as any).api = m.api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={onClose} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+    render(<WidgetWorkspace open={true} mode="create" widgetPreloadUrl="" onClose={onClose} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
 
     await act(async () => {
       fireEvent.change(screen.getByLabelText(/widget message/i), { target: { value: 'show weather' } });
@@ -274,7 +297,7 @@ describe('WidgetChatPanel', () => {
     const m = mockApi();
     const onClose = vi.fn();
     (window as any).api = m.api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={onClose} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+    render(<WidgetWorkspace open={true} mode="create" widgetPreloadUrl="" onClose={onClose} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
 
     await act(async () => {
       fireEvent.change(screen.getByLabelText(/widget message/i), { target: { value: 'show weather' } });
@@ -298,7 +321,7 @@ describe('WidgetChatPanel', () => {
     const m = mockApi();
     const onClose = vi.fn();
     (window as any).api = m.api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={onClose} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+    render(<WidgetWorkspace open={true} mode="create" widgetPreloadUrl="" onClose={onClose} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
 
     const textarea = screen.getByLabelText(/widget message/i);
     await act(async () => {
@@ -329,7 +352,7 @@ describe('WidgetChatPanel', () => {
     const onSent = vi.fn();
     (window as any).api = api;
     render(
-      <WidgetChatPanel
+      <WidgetWorkspace
         open={true}
         mode="edit"
         widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
@@ -351,7 +374,7 @@ describe('WidgetChatPanel', () => {
   it('Ctrl+Enter sends', async () => {
     const { api } = mockApi();
     (window as any).api = api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+    render(<WidgetWorkspace open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
 
     await userEvent.type(screen.getByLabelText(/widget message/i), 'show time');
     await userEvent.keyboard('{Control>}{Enter}{/Control}');
@@ -366,7 +389,7 @@ describe('WidgetChatPanel', () => {
     ]});
     (window as any).api = m.api;
     render(
-      <WidgetChatPanel
+      <WidgetWorkspace
         open={true}
         mode="edit"
         widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html', selectedProviderIds: ['p1', 'p2'] }}
@@ -390,7 +413,7 @@ describe('WidgetChatPanel', () => {
   it('refresh dropdown shows the seven presets and defaults to 1 hour in create mode', async () => {
     const { api } = mockApi();
     (window as any).api = api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+    render(<WidgetWorkspace open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
 
     const select = await screen.findByLabelText(/refresh cadence/i) as HTMLSelectElement;
     const labels = Array.from(select.options).map((o) => o.textContent);
@@ -402,7 +425,7 @@ describe('WidgetChatPanel', () => {
     const { api } = mockApi();
     (window as any).api = api;
     render(
-      <WidgetChatPanel
+      <WidgetWorkspace
         open={true}
         mode="edit"
         widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html', refreshTtlMs: 86_400_000 }}
@@ -426,7 +449,7 @@ describe('WidgetChatPanel', () => {
     const { api } = mockApi();
     (window as any).api = api;
     render(
-      <WidgetChatPanel
+      <WidgetWorkspace
         open={true}
         mode="edit"
         widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
@@ -467,7 +490,7 @@ describe('WidgetChatPanel', () => {
     });
     (window as any).api = api;
     render(
-      <WidgetChatPanel
+      <WidgetWorkspace
         open={true}
         mode="edit"
         widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html', refreshMode: 'event' }}
@@ -504,7 +527,7 @@ describe('WidgetChatPanel', () => {
     });
     (window as any).api = api;
     render(
-      <WidgetChatPanel
+      <WidgetWorkspace
         open={true}
         mode="edit"
         widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html', refreshMode: 'event' }}
@@ -527,7 +550,7 @@ describe('WidgetChatPanel', () => {
     const { api } = mockApi();
     (window as any).api = api;
     render(
-      <WidgetChatPanel
+      <WidgetWorkspace
         open={true}
         mode="edit"
         widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html', refreshMode: 'event' }}
@@ -549,7 +572,7 @@ describe('WidgetChatPanel', () => {
     const { api } = mockApi({ webhookTestResult: { ok: false, error: 'Local network server is off' } });
     (window as any).api = api;
     render(
-      <WidgetChatPanel
+      <WidgetWorkspace
         open={true}
         mode="edit"
         widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html', refreshMode: 'event' }}
@@ -570,7 +593,7 @@ describe('WidgetChatPanel', () => {
     const m = mockApi();
     const onCreated = vi.fn();
     (window as any).api = m.api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={onCreated} onSent={() => {}} onDeleted={() => {}} />);
+    render(<WidgetWorkspace open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={onCreated} onSent={() => {}} onDeleted={() => {}} />);
 
     const select = await screen.findByLabelText(/refresh cadence/i) as HTMLSelectElement;
     await userEvent.selectOptions(select, '86400000');
@@ -592,7 +615,7 @@ describe('WidgetChatPanel', () => {
     ]});
     const onCreated = vi.fn();
     (window as any).api = m.api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={onCreated} onSent={() => {}} onDeleted={() => {}} />);
+    render(<WidgetWorkspace open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={onCreated} onSent={() => {}} onDeleted={() => {}} />);
 
     await screen.findByLabelText(/allow openweather/i);
     await userEvent.type(screen.getByLabelText(/widget message/i), 'show weather');
@@ -607,7 +630,7 @@ describe('WidgetChatPanel', () => {
   it('shows empty-state message when no providers are configured', async () => {
     const m = mockApi({ providers: [] });
     (window as any).api = m.api;
-    render(<WidgetChatPanel open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
+    render(<WidgetWorkspace open={true} mode="create" widgetPreloadUrl="" onClose={() => {}} onCreated={() => {}} onSent={() => {}} onDeleted={() => {}} />);
 
     expect(await screen.findByText(/no providers configured/i)).toBeInTheDocument();
   });
@@ -616,7 +639,7 @@ describe('WidgetChatPanel', () => {
     const { api } = mockApi();
     (window as any).api = api;
     render(
-      <WidgetChatPanel
+      <WidgetWorkspace
         open={true}
         mode="create"
         widgetPreloadUrl=""
@@ -636,7 +659,7 @@ describe('WidgetChatPanel', () => {
     const onClose = vi.fn();
     (window as any).api = api;
     render(
-      <WidgetChatPanel
+      <WidgetWorkspace
         open={true}
         mode="edit"
         widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
@@ -667,7 +690,7 @@ describe('WidgetChatPanel', () => {
     ]) as any;
     (window as any).api = m.api;
     render(
-      <WidgetChatPanel
+      <WidgetWorkspace
         open={true}
         mode="edit"
         widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
@@ -694,8 +717,8 @@ describe('WidgetChatPanel', () => {
     ]});
     const onAddProviderRequest = vi.fn();
     (window as any).api = m.api;
-    render(
-      <WidgetChatPanel
+    const { container } = render(
+      <WidgetWorkspace
         open={true}
         mode="edit"
         widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
@@ -720,6 +743,9 @@ describe('WidgetChatPanel', () => {
 
     const banner = await screen.findByText(/This widget will use Cloudflare API\./i);
     expect(banner).toBeInTheDocument();
+    const suggestions = Array.from(container.querySelectorAll('details'))
+      .find((section) => section.querySelector('summary')?.textContent === 'Provider suggestions') as HTMLDetailsElement | undefined;
+    expect(suggestions?.open).toBe(true);
     expect(screen.queryByText(/This widget will use Stripe/)).toBeNull();
 
     await userEvent.click(screen.getByRole('button', { name: /^add provider$/i }));
@@ -730,7 +756,7 @@ describe('WidgetChatPanel', () => {
     const m = mockApi();
     (window as any).api = m.api;
     render(
-      <WidgetChatPanel
+      <WidgetWorkspace
         open={true}
         mode="edit"
         widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
@@ -755,7 +781,7 @@ describe('WidgetChatPanel', () => {
     const onClose = vi.fn();
     (window as any).api = m.api;
     const { container } = render(
-      <WidgetChatPanel
+      <WidgetWorkspace
         open={true}
         mode="edit"
         widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
@@ -787,7 +813,7 @@ describe('WidgetChatPanel', () => {
     const m = mockApi();
     (window as any).api = m.api;
     render(
-      <WidgetChatPanel
+      <WidgetWorkspace
         open={true}
         mode="edit"
         widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
@@ -819,7 +845,7 @@ describe('WidgetChatPanel', () => {
     const m = mockApi();
     (window as any).api = m.api;
     render(
-      <WidgetChatPanel
+      <WidgetWorkspace
         open={true}
         mode="edit"
         widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
