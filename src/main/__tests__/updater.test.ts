@@ -88,7 +88,7 @@ describe('updater', () => {
     });
   });
 
-  it('configures prerelease auto-downloads and checks on Windows packaged builds', async () => {
+  it('configures stable auto-downloads and checks on Windows packaged builds by default', async () => {
     mocked.app.isPackaged = true;
     setPlatform('win32');
     const { createUpdateController } = await loadUpdater();
@@ -97,9 +97,53 @@ describe('updater', () => {
     await controller.checkNow();
 
     expect(mocked.autoUpdater.autoDownload).toBe(true);
-    expect(mocked.autoUpdater.allowPrerelease).toBe(true);
+    expect(mocked.autoUpdater.allowPrerelease).toBe(false);
     expect(mocked.autoUpdater.autoInstallOnAppQuit).toBe(true);
     expect(mocked.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
+  });
+
+  it('configures prerelease auto-downloads when the prerelease channel is selected', async () => {
+    mocked.app.isPackaged = true;
+    setPlatform('win32');
+    const { createUpdateController } = await loadUpdater();
+
+    const controller = createUpdateController(vi.fn(), { updateChannel: 'prerelease' });
+    await controller.checkNow();
+
+    expect(mocked.autoUpdater.autoDownload).toBe(true);
+    expect(mocked.autoUpdater.allowPrerelease).toBe(true);
+    expect(mocked.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
+  });
+
+  it('setChannel updates prerelease behavior without checking immediately', async () => {
+    mocked.app.isPackaged = true;
+    setPlatform('win32');
+    const { createUpdateController } = await loadUpdater();
+    const send = vi.fn();
+    const controller = createUpdateController(send);
+
+    expect(mocked.autoUpdater.allowPrerelease).toBe(false);
+
+    controller.setChannel('prerelease');
+    expect(mocked.autoUpdater.allowPrerelease).toBe(true);
+    expect(mocked.autoUpdater.checkForUpdates).not.toHaveBeenCalled();
+    expect(controller.getState()).toEqual({ status: 'idle' });
+    expect(send).toHaveBeenCalledWith({ status: 'idle' });
+
+    controller.setChannel('stable');
+    expect(mocked.autoUpdater.allowPrerelease).toBe(false);
+  });
+
+  it('setChannel is a no-op for unsupported builds', async () => {
+    mocked.app.isPackaged = false;
+    setPlatform('win32');
+    const { createUpdateController } = await loadUpdater();
+    const controller = createUpdateController(vi.fn(), { updateChannel: 'prerelease' });
+
+    controller.setChannel('prerelease');
+
+    expect(mocked.autoUpdater.allowPrerelease).toBe(false);
+    expect(mocked.autoUpdater.checkForUpdates).not.toHaveBeenCalled();
   });
 
   it('uses downloaded state to gate quitAndInstall', async () => {

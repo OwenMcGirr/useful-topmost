@@ -24,9 +24,10 @@ function mockApi(initial: any[] = []) {
       cancelLookup: vi.fn(async () => ({ ok: true }) as any)
     },
     prefs: {
-      get: vi.fn(async () => ({ geekMode: false, lanServer: { enabled: false, port: 32177 } })),
+      get: vi.fn(async () => ({ geekMode: false, lanServer: { enabled: false, port: 32177 }, updateChannel: 'stable' })),
       setGeekMode: vi.fn(async () => ({ ok: true })),
-      setLanServer: vi.fn(async () => ({ ok: true }))
+      setLanServer: vi.fn(async () => ({ ok: true })),
+      setUpdateChannel: vi.fn(async () => ({ ok: true }))
     },
     startup: {
       get: vi.fn(async () => ({ enabled: false, supported: true, platform: 'win32' })),
@@ -530,6 +531,55 @@ describe('SettingsModal', () => {
 
     expect(onCheckUpdates).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('button', { name: /restart to update/i })).toBeNull();
+  });
+
+  it('Updates section shows stable update channel and persists prerelease selection', async () => {
+    const { api } = mockApi([]);
+    (window as any).api = api;
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /^updates$/i }));
+
+    const select = await screen.findByLabelText(/update channel/i) as HTMLSelectElement;
+    expect(select.value).toBe('stable');
+    expect(screen.getByText('Stable releases only.')).toBeInTheDocument();
+
+    await userEvent.selectOptions(select, 'prerelease');
+
+    await waitFor(() => expect(api.prefs.setUpdateChannel).toHaveBeenCalledWith('prerelease'));
+    expect(select.value).toBe('prerelease');
+    expect(screen.getByText('Release candidates and stable releases.')).toBeInTheDocument();
+  });
+
+  it('Updates section persists stable selection from prerelease', async () => {
+    const { api } = mockApi([]);
+    api.prefs.get = vi.fn(async () => ({ geekMode: false, lanServer: { enabled: false, port: 32177 }, updateChannel: 'prerelease' }));
+    (window as any).api = api;
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /^updates$/i }));
+    const select = await screen.findByLabelText(/update channel/i) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('prerelease'));
+
+    await userEvent.selectOptions(select, 'stable');
+
+    await waitFor(() => expect(api.prefs.setUpdateChannel).toHaveBeenCalledWith('stable'));
+    expect(select.value).toBe('stable');
+  });
+
+  it('Updates section rolls back update channel when saving fails', async () => {
+    const { api } = mockApi([]);
+    api.prefs.setUpdateChannel = vi.fn(async () => ({ ok: false, error: 'permission denied' }));
+    (window as any).api = api;
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /^updates$/i }));
+    const select = await screen.findByLabelText(/update channel/i) as HTMLSelectElement;
+    await userEvent.selectOptions(select, 'prerelease');
+
+    await waitFor(() => expect(api.prefs.setUpdateChannel).toHaveBeenCalledWith('prerelease'));
+    await waitFor(() => expect(select.value).toBe('stable'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('permission denied.');
   });
 
   it('disables Check for updates while the updater is busy (checking / downloading / downloaded)', async () => {

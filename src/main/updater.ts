@@ -1,5 +1,6 @@
 import { app } from 'electron';
 import { autoUpdater } from 'electron-updater';
+import type { UpdateChannel } from './prefs-store';
 
 export type UpdateState =
   | { status: 'unsupported'; reason: string }
@@ -15,6 +16,7 @@ export interface UpdateController {
   getState(): UpdateState;
   checkNow(): Promise<UpdateState>;
   quitAndInstall(): void;
+  setChannel(channel: UpdateChannel): void;
 }
 
 function getUnsupportedState(): UpdateState | null {
@@ -34,7 +36,14 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function createUpdateController(sendToRenderer: (state: UpdateState) => void): UpdateController {
+function applyUpdateChannel(channel: UpdateChannel): void {
+  autoUpdater.allowPrerelease = channel === 'prerelease';
+}
+
+export function createUpdateController(
+  sendToRenderer: (state: UpdateState) => void,
+  opts: { updateChannel: UpdateChannel } = { updateChannel: 'stable' }
+): UpdateController {
   const unsupported = getUnsupportedState();
   let state: UpdateState = unsupported ?? { status: 'idle' };
 
@@ -45,7 +54,7 @@ export function createUpdateController(sendToRenderer: (state: UpdateState) => v
 
   if (!unsupported) {
     autoUpdater.autoDownload = true;
-    autoUpdater.allowPrerelease = true;
+    applyUpdateChannel(opts.updateChannel);
     autoUpdater.autoInstallOnAppQuit = true;
 
     autoUpdater.on('checking-for-update', () => setState({ status: 'checking' }));
@@ -75,6 +84,11 @@ export function createUpdateController(sendToRenderer: (state: UpdateState) => v
       if (state.status === 'downloaded') {
         autoUpdater.quitAndInstall();
       }
+    },
+    setChannel: (channel) => {
+      if (unsupported) return;
+      applyUpdateChannel(channel);
+      if (state.status !== 'downloaded') setState({ status: 'idle' });
     }
   };
 }

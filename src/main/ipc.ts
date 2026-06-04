@@ -5,7 +5,7 @@ import type { IpcMain, WebContents } from 'electron';
 import { effectiveRefreshMode, type WidgetRefreshMode, type WidgetStore, type WidgetSummary } from './widget-store';
 import type { SecretsStore, Provider } from './secrets-store';
 import type { OnboardingStore } from './onboarding-store';
-import type { PrefsStore } from './prefs-store';
+import type { PrefsStore, UpdateChannel } from './prefs-store';
 import type { LanServerController } from './lan-server';
 import type { StartupController, StartupState } from './startup';
 import type { runCodex as RunCodexFn } from './codex-runner';
@@ -281,7 +281,8 @@ export function registerIpc(
   getSender: GetSender,
   prefs: PrefsStore,
   lan?: LanServerController,
-  startup?: StartupController
+  startup?: StartupController,
+  onUpdateChannelChanged?: (channel: UpdateChannel) => void
 ): void {
   const inflight = new Map<string, AbortController>();
 
@@ -852,6 +853,15 @@ export function registerIpc(
     const lanServer = { enabled: next.enabled, port: next.port as number };
     await prefs.setLanServer(lanServer);
     if (lan) await lan.applyConfig(lanServer);
+    return { ok: true as const };
+  });
+
+  ipcMain.handle('prefs:setUpdateChannel', async (_event, value: unknown) => {
+    if (value !== 'stable' && value !== 'prerelease') {
+      return { ok: false as const, error: 'updateChannel must be stable or prerelease' };
+    }
+    await prefs.setUpdateChannel(value);
+    onUpdateChannelChanged?.(value);
     return { ok: true as const };
   });
 

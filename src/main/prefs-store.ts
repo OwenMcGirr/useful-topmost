@@ -1,18 +1,22 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
+export type UpdateChannel = 'stable' | 'prerelease';
+
 export interface Prefs {
   geekMode: boolean;
   lanServer: {
     enabled: boolean;
     port: number;
   };
+  updateChannel: UpdateChannel;
 }
 
 export interface PrefsStore {
   get(): Promise<Prefs>;
   setGeekMode(value: boolean): Promise<void>;
   setLanServer(value: Prefs['lanServer']): Promise<void>;
+  setUpdateChannel(value: UpdateChannel): Promise<void>;
 }
 
 export const DEFAULT_LAN_SERVER_PORT = 32177;
@@ -22,11 +26,16 @@ const DEFAULT_PREFS: Prefs = {
   lanServer: {
     enabled: false,
     port: DEFAULT_LAN_SERVER_PORT
-  }
+  },
+  updateChannel: 'stable'
 };
 
 function validPort(value: unknown): value is number {
   return Number.isInteger(value) && value >= 1024 && value <= 65535;
+}
+
+function validUpdateChannel(value: unknown): value is UpdateChannel {
+  return value === 'stable' || value === 'prerelease';
 }
 
 function normalizePrefs(parsed: Partial<Prefs> | null | undefined): Prefs {
@@ -40,7 +49,8 @@ function normalizePrefs(parsed: Partial<Prefs> | null | undefined): Prefs {
     lanServer: {
       enabled: typeof lanServer?.enabled === 'boolean' ? lanServer.enabled : DEFAULT_PREFS.lanServer.enabled,
       port: validPort(lanServer?.port) ? lanServer.port : DEFAULT_PREFS.lanServer.port
-    }
+    },
+    updateChannel: validUpdateChannel(parsed.updateChannel) ? parsed.updateChannel : DEFAULT_PREFS.updateChannel
   };
 }
 
@@ -78,6 +88,12 @@ export function createPrefsStore(root: string): PrefsStore {
           port: value.port
         }
       });
+    },
+
+    async setUpdateChannel(value: UpdateChannel) {
+      if (!validUpdateChannel(value)) throw new Error('updateChannel must be stable or prerelease');
+      const current = await read();
+      await write({ ...current, updateChannel: value });
     }
   };
 }
