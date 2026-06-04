@@ -302,11 +302,11 @@ describe('ipc', () => {
 
     registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
 
-    expect(await ipc.invoke('prefs:get')).toEqual({ geekMode: false, lanServer: { enabled: false, port: 32177 } });
+    expect(await ipc.invoke('prefs:get')).toEqual({ geekMode: false, lanServer: { enabled: false, port: 32177 }, updateChannel: 'stable' });
 
     const ok = await ipc.invoke('prefs:setGeekMode', true);
     expect(ok).toEqual({ ok: true });
-    expect(await ipc.invoke('prefs:get')).toEqual({ geekMode: true, lanServer: { enabled: false, port: 32177 } });
+    expect(await ipc.invoke('prefs:get')).toEqual({ geekMode: true, lanServer: { enabled: false, port: 32177 }, updateChannel: 'stable' });
 
     const bad = await ipc.invoke('prefs:setGeekMode', 'yes');
     expect(bad.ok).toBe(false);
@@ -336,6 +336,41 @@ describe('ipc', () => {
 
     const bad = await ipc.invoke('prefs:setLanServer', { enabled: true, port: 80 });
     expect(bad.ok).toBe(false);
+  });
+
+  it('prefs:setUpdateChannel validates, persists, and notifies the updater callback', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+    const onUpdateChannelChanged = vi.fn();
+
+    registerIpc(
+      ipc as any,
+      store,
+      secrets,
+      createOnboardingStore(root),
+      runCodex as any,
+      () => sender as any,
+      createPrefsStore(root),
+      undefined,
+      undefined,
+      onUpdateChannelChanged
+    );
+
+    expect(await ipc.invoke('prefs:setUpdateChannel', 'prerelease')).toEqual({ ok: true });
+    expect((await ipc.invoke('prefs:get')).updateChannel).toBe('prerelease');
+    expect(onUpdateChannelChanged).toHaveBeenCalledWith('prerelease');
+
+    expect(await ipc.invoke('prefs:setUpdateChannel', 'stable')).toEqual({ ok: true });
+    expect((await ipc.invoke('prefs:get')).updateChannel).toBe('stable');
+    expect(onUpdateChannelChanged).toHaveBeenCalledWith('stable');
+
+    const bad = await ipc.invoke('prefs:setUpdateChannel', 'nightly');
+    expect(bad.ok).toBe(false);
+    expect((await ipc.invoke('prefs:get')).updateChannel).toBe('stable');
   });
 
   it('startup:get returns the controller state', async () => {

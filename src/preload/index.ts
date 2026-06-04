@@ -6,6 +6,7 @@ import type { UpdateState } from '../main/updater';
 import type { WidgetRefreshMode, WidgetSize, WidgetSummary } from '../main/widget-store';
 import type { LanServerState } from '../main/lan-server';
 import type { StartupState } from '../main/startup';
+import type { UpdateChannel } from '../main/prefs-store';
 
 export interface CodexStatus {
   installed: boolean;
@@ -147,11 +148,17 @@ const api = {
     dismiss: () => ipcRenderer.invoke('onboarding:dismiss') as Promise<{ ok: true }>
   },
   prefs: {
-    get: () => ipcRenderer.invoke('prefs:get') as Promise<{ geekMode: boolean; lanServer: { enabled: boolean; port: number } }>,
+    get: () => ipcRenderer.invoke('prefs:get') as Promise<{
+      geekMode: boolean;
+      lanServer: { enabled: boolean; port: number };
+      updateChannel: UpdateChannel;
+    }>,
     setGeekMode: (value: boolean) =>
       ipcRenderer.invoke('prefs:setGeekMode', value) as Promise<{ ok: true } | { ok: false; error: string }>,
     setLanServer: (value: { enabled: boolean; port: number }) =>
-      ipcRenderer.invoke('prefs:setLanServer', value) as Promise<{ ok: true } | { ok: false; error: string }>
+      ipcRenderer.invoke('prefs:setLanServer', value) as Promise<{ ok: true } | { ok: false; error: string }>,
+    setUpdateChannel: (value: UpdateChannel) =>
+      ipcRenderer.invoke('prefs:setUpdateChannel', value) as Promise<{ ok: true } | { ok: false; error: string }>
   },
   lan: {
     getState: () => ipcRenderer.invoke('lan:getState') as Promise<LanServerState>
@@ -178,4 +185,4 @@ const api = {
 contextBridge.exposeInMainWorld('api', api);
 
 export type Api = typeof api;
-export type { StartupState, UpdateState, WidgetRefreshMode, WidgetSize };
+export type { StartupState, UpdateChannel, UpdateState, WidgetRefreshMode, WidgetSize };

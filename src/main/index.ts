@@ -114,6 +114,7 @@ app.whenReady().then(async () => {
   const secrets = createSecretsStore(userData);
   const onboarding = createOnboardingStore(userData);
   const prefs = createPrefsStore(userData);
+  const initialPrefs = await prefs.get();
   const lan = createLanServerController({
     widgets: store,
     secrets,
@@ -122,9 +123,23 @@ app.whenReady().then(async () => {
     }
   });
   const startup = createStartupController({ app });
+  const updates = createUpdateController((state) => {
+    mainWindow?.webContents.send('update:state', state);
+  }, { updateChannel: initialPrefs.updateChannel });
   stopLanServer = () => lan.stop();
-  registerIpc(ipcMain, store, secrets, onboarding, runCodex, () => mainWindow!.webContents, prefs, lan, startup);
-  void prefs.get().then((p) => lan.applyConfig(p.lanServer));
+  registerIpc(
+    ipcMain,
+    store,
+    secrets,
+    onboarding,
+    runCodex,
+    () => mainWindow!.webContents,
+    prefs,
+    lan,
+    startup,
+    (channel) => updates.setChannel(channel)
+  );
+  void lan.applyConfig(initialPrefs.lanServer);
 
   ipcMain.handle('app:codexStatus', () => checkCodexStatus());
   ipcMain.handle('app:codexAvailable', async () => {
@@ -133,10 +148,6 @@ app.whenReady().then(async () => {
   });
 
   createWindow();
-
-  const updates = createUpdateController((state) => {
-    mainWindow?.webContents.send('update:state', state);
-  });
 
   ipcMain.handle('update:getState', () => updates.getState());
   ipcMain.handle('update:checkNow', () => updates.checkNow());
