@@ -67,6 +67,7 @@ function renderedDashboardTiles(container: HTMLElement) {
 function mockApi(opts: { onboardingDismissed?: boolean } = {}) {
   const readyHandlers: Array<(uuid: string) => void> = [];
   const errorHandlers: Array<(uuid: string, msg: string) => void> = [];
+  const webhookHandlers: Array<(uuid: string, receivedAt: string) => void> = [];
   const api = {
     listWidgets: vi.fn(async () => [] as any),
     createWidget: vi.fn(async (_p: string) => ({ uuid: 'new-uuid' })),
@@ -100,6 +101,13 @@ function mockApi(opts: { onboardingDismissed?: boolean } = {}) {
       };
     }),
     onWidgetPlan: vi.fn(() => () => {}),
+    onWidgetWebhook: vi.fn((cb: any) => {
+      webhookHandlers.push(cb);
+      return () => {
+        const idx = webhookHandlers.indexOf(cb);
+        if (idx >= 0) webhookHandlers.splice(idx, 1);
+      };
+    }),
     secrets: {
       list: vi.fn(async () => []),
       save: vi.fn(async () => ({ ok: true })),
@@ -127,7 +135,8 @@ function mockApi(opts: { onboardingDismissed?: boolean } = {}) {
   return {
     api,
     fireReady: (uuid: string) => readyHandlers.forEach((cb) => cb(uuid)),
-    fireError: (uuid: string, msg: string) => errorHandlers.forEach((cb) => cb(uuid, msg))
+    fireError: (uuid: string, msg: string) => errorHandlers.forEach((cb) => cb(uuid, msg)),
+    fireWebhook: (uuid: string, receivedAt: string) => webhookHandlers.forEach((cb) => cb(uuid, receivedAt))
   };
 }
 
@@ -607,6 +616,30 @@ describe('Dashboard', () => {
     m.fireReady('new-uuid');
 
     await waitFor(() => expect(container.querySelector('webview')).not.toBeNull());
+  });
+
+  it('cache-busts only the affected tile on widget:webhook', async () => {
+    const m = mockApi({ onboardingDismissed: true });
+    m.api.listWidgets.mockResolvedValueOnce([
+      { uuid: 'a', prompt: 'first', created_at: '', refreshMode: 'event', webhook: { enabled: true, cacheKey: 'webhook' } },
+      { uuid: 'b', prompt: 'second', created_at: '' }
+    ]);
+    (window as any).api = m.api;
+
+    const { container } = render(<Dashboard />);
+    triggerDashboardResize();
+
+    await waitFor(() => expect(container.querySelectorAll('webview').length).toBe(2));
+    const before = renderedWidgetSrcs(container);
+
+    act(() => m.fireWebhook('a', '2026-06-04T09:00:00.000Z'));
+
+    await waitFor(() => {
+      const after = renderedWidgetSrcs(container);
+      expect(after[0]).not.toBe(before[0]);
+      expect(after[0]).toContain('rev=');
+      expect(after[1]).toBe(before[1]);
+    });
   });
 
   it('flips new tile from building to error on widget:error', async () => {

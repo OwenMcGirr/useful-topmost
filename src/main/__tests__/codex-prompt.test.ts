@@ -111,6 +111,15 @@ describe('codex-prompt', () => {
     expect(CODEX_SYSTEM_PROMPT).not.toContain('bake it into a setInterval');
   });
 
+  it('documents event-driven webhook widget cache behavior', () => {
+    expect(CODEX_SYSTEM_PROMPT).toContain('Event-driven data:');
+    expect(CODEX_SYSTEM_PROMPT).toContain('window.cache.get("webhook", async () => null)');
+    expect(CODEX_SYSTEM_PROMPT).toContain('{ receivedAt: string, payload: unknown }');
+    expect(CODEX_SYSTEM_PROMPT).toContain('Waiting for webhook event.');
+    expect(CODEX_SYSTEM_PROMPT).toContain('Do not poll, use setInterval, or display refresh timers');
+    expect(CODEX_SYSTEM_PROMPT).toContain('The host app reloads the widget when a webhook event arrives.');
+  });
+
   it('instructs Codex not to render widget refresh timestamps', () => {
     expect(CODEX_SYSTEM_PROMPT).toContain('Do not display app-refresh or generation timestamps inside the widget');
     expect(CODEX_SYSTEM_PROMPT).toContain('Updated at');

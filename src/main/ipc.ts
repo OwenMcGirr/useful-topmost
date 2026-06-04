@@ -2,7 +2,7 @@ import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type { IpcMain, WebContents } from 'electron';
-import type { WidgetStore, WidgetSummary } from './widget-store';
+import { effectiveRefreshMode, type WidgetRefreshMode, type WidgetStore, type WidgetSummary } from './widget-store';
 import type { SecretsStore, Provider } from './secrets-store';
 import type { OnboardingStore } from './onboarding-store';
 import type { PrefsStore } from './prefs-store';
@@ -12,7 +12,7 @@ import type { runCodex as RunCodexFn } from './codex-runner';
 import { DEFAULT_REFRESH_TTL_MS, PROVIDER_LOOKUP_OUTPUT_FILE, WIDGET_PLAN_OUTPUT_FILE, WIDGET_SUMMARY_OUTPUT_FILE, buildChatPrompt, buildPrompt, buildProviderLookupPrompt } from './codex-prompt';
 import { appFetch, filterProviders, injectAuth } from './proxy';
 import { runLocalExec, widgetCwdFromSenderUrl } from './local-exec';
-import { getCacheEntry, writeCacheEntry } from './widget-cache-store';
+import { getCacheEntry, getCacheEntryUnexpired, writeCacheEntry } from './widget-cache-store';
 
 export type GetSender = () => Pick<WebContents, 'send'>;
 
@@ -53,6 +53,22 @@ function validateProvider(p: any): SaveResultErr | null {
 
 function validRequestedTtl(ttlMs: unknown): number | undefined {
   return typeof ttlMs === 'number' && Number.isFinite(ttlMs) && ttlMs >= 0 ? ttlMs : undefined;
+}
+
+function validRefreshMode(value: unknown): value is WidgetRefreshMode {
+  return value === 'timed' || value === 'live' || value === 'event';
+}
+
+function uniqueUrls(values: string[]): string[] {
+  return Array.from(new Set(values));
+}
+
+interface WidgetWebhookInfo {
+  enabled: boolean;
+  path: string;
+  urlCandidates: string[];
+  cacheKey: 'webhook';
+  lastReceivedAt?: string;
 }
 
 export interface ProviderLookupResultOk {
@@ -290,6 +306,34 @@ export function registerIpc(
     fetchLog.set(uuid, list);
   };
 
+  const getWidgetWebhookInfo = async (uuid: string): Promise<WidgetWebhookInfo | { ok: false; error: string }> => {
+    if (typeof uuid !== 'string' || !uuid) return { ok: false as const, error: 'uuid is required' };
+    let meta;
+    try {
+      meta = await widgets.getMeta(uuid);
+    } catch {
+      return { ok: false as const, error: 'widget not found' };
+    }
+    if (effectiveRefreshMode(meta) !== 'event') {
+      return { ok: false as const, error: 'widget is not event-driven' };
+    }
+    const webhook = meta.webhook ?? await widgets.ensureWebhook(uuid);
+    const encodedUuid = encodeURIComponent(uuid);
+    const encodedToken = encodeURIComponent(webhook.token);
+    const webhookPath = `/api/widgets/${encodedUuid}/webhook/${encodedToken}`;
+    const lanState = lan?.getState();
+    const bases = lanState?.running
+      ? [...lanState.urls, `http://localhost:${lanState.port}/`]
+      : [`http://localhost:${lanState?.port ?? 32177}/`];
+    return {
+      enabled: true,
+      path: webhookPath,
+      urlCandidates: uniqueUrls(bases.map((base) => `${base.replace(/\/+$/, '')}${webhookPath}`)),
+      cacheKey: 'webhook',
+      lastReceivedAt: webhook.lastReceivedAt
+    };
+  };
+
   const trackRun = (uuid: string): AbortController => {
     const controller = new AbortController();
     inflight.set(uuid, controller);
@@ -508,6 +552,47 @@ export function registerIpc(
     return { ok: true as const };
   });
 
+  ipcMain.handle('widget:setRefreshMode', async (_event, uuid: string, mode: unknown, ttlMs: unknown) => {
+    if (!validRefreshMode(mode)) {
+      return { ok: false as const, error: 'mode must be timed, live, or event' };
+    }
+    if (mode === 'timed') {
+      const requestedTtlMs = validRequestedTtl(ttlMs);
+      if (requestedTtlMs !== undefined && requestedTtlMs <= 0) {
+        return { ok: false as const, error: 'ttlMs must be positive for timed refresh' };
+      }
+      let nextTtlMs = requestedTtlMs;
+      if (nextTtlMs === undefined) {
+        try {
+          const meta = await widgets.getMeta(uuid);
+          nextTtlMs = meta.refreshTtlMs && meta.refreshTtlMs > 0 ? meta.refreshTtlMs : DEFAULT_REFRESH_TTL_MS;
+        } catch {
+          return { ok: false as const, error: 'widget not found' };
+        }
+      }
+      await widgets.setRefreshMode(uuid, 'timed', nextTtlMs);
+      return { ok: true as const };
+    }
+    await widgets.setRefreshMode(uuid, mode);
+    return { ok: true as const };
+  });
+
+  ipcMain.handle('widget:getWebhook', async (_event, uuid: string) => getWidgetWebhookInfo(uuid));
+
+  ipcMain.handle('widget:rotateWebhookToken', async (_event, uuid: string) => {
+    let meta;
+    try {
+      meta = await widgets.getMeta(uuid);
+    } catch {
+      return { ok: false as const, error: 'widget not found' };
+    }
+    if (effectiveRefreshMode(meta) !== 'event') {
+      return { ok: false as const, error: 'widget is not event-driven' };
+    }
+    await widgets.rotateWebhookToken(uuid);
+    return getWidgetWebhookInfo(uuid);
+  });
+
   ipcMain.handle('widget:setProviders', async (_event, uuid: string, providerIds: unknown) => {
     if (providerIds === undefined || providerIds === null) {
       await widgets.setProviders(uuid, undefined);
@@ -699,7 +784,7 @@ export function registerIpc(
     try {
       const meta = await widgets.getMeta(uuid);
       const ttlMs = meta.refreshTtlMs ?? validRequestedTtl(requestedTtlMs) ?? DEFAULT_REFRESH_TTL_MS;
-      return { cwd, ttlMs };
+      return { cwd, ttlMs, mode: effectiveRefreshMode(meta) };
     } catch {
       return null;
     }
@@ -711,6 +796,7 @@ export function registerIpc(
     if (typeof key !== 'string' || !key) return null;
     const context = await cacheContext(event.senderFrame?.url ?? '', requestedTtlMs);
     if (!context) return null;
+    if (context.mode === 'event') return getCacheEntryUnexpired(context.cwd, key);
     return getCacheEntry(context.cwd, key, context.ttlMs);
   });
 
@@ -718,11 +804,12 @@ export function registerIpc(
     const context = await cacheContext(event.senderFrame?.url ?? '', requestedTtlMs);
     if (!context) return { ok: false as const, error: 'cache is only available to widget files' };
     if (typeof key !== 'string' || !key) return { ok: false as const, error: 'key must be a non-empty string' };
-    if (context.ttlMs <= 0) {
+    const ttlMs = context.mode === 'event' ? DEFAULT_REFRESH_TTL_MS : context.ttlMs;
+    if (ttlMs <= 0) {
       return { ok: true as const };
     }
     try {
-      await writeCacheEntry(context.cwd, key, value, context.ttlMs);
+      await writeCacheEntry(context.cwd, key, value, ttlMs);
       return { ok: true as const };
     } catch (e: any) {
       return { ok: false as const, error: e?.message ?? 'cache write failed' };

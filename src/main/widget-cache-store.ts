@@ -47,6 +47,11 @@ export async function getCacheEntry(widgetDir: string, key: string, ttlMs: numbe
   return entry;
 }
 
+export async function getCacheEntryUnexpired(widgetDir: string, key: string): Promise<CacheEntry | null> {
+  const cache = await readCache(widgetDir);
+  return cache[key] ?? null;
+}
+
 export async function writeCacheEntry(
   widgetDir: string,
   key: string,
@@ -57,5 +62,18 @@ export async function writeCacheEntry(
   const now = Date.now();
   const cache = await readCache(widgetDir);
   cache[key] = { value, fetchedAt: now, expiresAt: now + ttlMs };
+  await fs.writeFile(cachePath(widgetDir), JSON.stringify(cache, null, 2));
+}
+
+export async function writeWebhookCacheEntry(
+  widgetDir: string,
+  payload: unknown,
+  receivedAt: string
+): Promise<void> {
+  const cache = await readCache(widgetDir);
+  cache.webhook = {
+    value: { receivedAt, payload },
+    fetchedAt: Date.now()
+  };
   await fs.writeFile(cachePath(widgetDir), JSON.stringify(cache, null, 2));
 }

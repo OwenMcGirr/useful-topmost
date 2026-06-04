@@ -3,7 +3,7 @@ import type { IpcRendererEvent } from 'electron';
 import type { PublicProvider, Provider } from '../main/secrets-store';
 import type { OnboardingState } from '../main/onboarding-store';
 import type { UpdateState } from '../main/updater';
-import type { WidgetSize, WidgetSummary } from '../main/widget-store';
+import type { WidgetRefreshMode, WidgetSize, WidgetSummary } from '../main/widget-store';
 import type { LanServerState } from '../main/lan-server';
 import type { StartupState } from '../main/startup';
 
@@ -20,7 +20,21 @@ export interface Widget {
   size?: WidgetSize;
   selectedProviderIds?: string[];
   summary?: WidgetSummary;
+  refreshMode?: WidgetRefreshMode;
   refreshTtlMs?: number;
+  webhook?: {
+    enabled: boolean;
+    cacheKey: 'webhook';
+    lastReceivedAt?: string;
+  };
+}
+
+export interface WidgetWebhookInfo {
+  enabled: boolean;
+  path: string;
+  urlCandidates: string[];
+  cacheKey: 'webhook';
+  lastReceivedAt?: string;
 }
 
 export type WidgetChatRole = 'user' | 'status';
@@ -81,6 +95,12 @@ const api = {
     ipcRenderer.invoke('widget:setProviders', uuid, providerIds) as Promise<{ ok: true } | { ok: false; error: string }>,
   setWidgetRefreshTtl: (uuid: string, ttlMs: number | null) =>
     ipcRenderer.invoke('widget:setRefreshTtl', uuid, ttlMs) as Promise<{ ok: true } | { ok: false; error: string }>,
+  setWidgetRefreshMode: (uuid: string, mode: WidgetRefreshMode, ttlMs?: number) =>
+    ipcRenderer.invoke('widget:setRefreshMode', uuid, mode, ttlMs) as Promise<{ ok: true } | { ok: false; error: string }>,
+  getWidgetWebhook: (uuid: string) =>
+    ipcRenderer.invoke('widget:getWebhook', uuid) as Promise<WidgetWebhookInfo | { ok: false; error: string }>,
+  rotateWidgetWebhookToken: (uuid: string) =>
+    ipcRenderer.invoke('widget:rotateWebhookToken', uuid) as Promise<WidgetWebhookInfo | { ok: false; error: string }>,
   listWidgets: () => ipcRenderer.invoke('widget:list') as Promise<Widget[]>,
   getWidgetMeta: (uuid: string) => ipcRenderer.invoke('widget:getMeta', uuid) as Promise<{ prompt: string; created_at: string }>,
   getWidgetFetchLog: (uuid: string) =>
@@ -104,6 +124,11 @@ const api = {
       cb(payload.uuid, payload.providers);
     ipcRenderer.on('widget:plan', handler);
     return () => ipcRenderer.removeListener('widget:plan', handler);
+  },
+  onWidgetWebhook: (cb: (uuid: string, receivedAt: string) => void) => {
+    const handler = (_e: IpcRendererEvent, payload: { uuid: string; receivedAt: string }) => cb(payload.uuid, payload.receivedAt);
+    ipcRenderer.on('widget:webhook', handler);
+    return () => ipcRenderer.removeListener('widget:webhook', handler);
   },
   secrets: {
     list: () => ipcRenderer.invoke('secrets:list') as Promise<PublicProvider[]>,
@@ -153,4 +178,4 @@ const api = {
 contextBridge.exposeInMainWorld('api', api);
 
 export type Api = typeof api;
-export type { StartupState, UpdateState, WidgetSize };
+export type { StartupState, UpdateState, WidgetRefreshMode, WidgetSize };

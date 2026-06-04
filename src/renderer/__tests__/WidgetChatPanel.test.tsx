@@ -21,6 +21,19 @@ function mockApi(opts: { providers?: Array<{ id: string; name: string; hostnames
     deleteWidget: vi.fn(async () => ({ ok: true })),
     setWidgetProviders: vi.fn(async () => ({ ok: true })),
     setWidgetRefreshTtl: vi.fn(async () => ({ ok: true })),
+    setWidgetRefreshMode: vi.fn(async () => ({ ok: true })),
+    getWidgetWebhook: vi.fn(async () => ({
+      enabled: true,
+      path: '/api/widgets/new-widget/webhook/token',
+      urlCandidates: ['http://localhost:32177/api/widgets/new-widget/webhook/token'],
+      cacheKey: 'webhook' as const
+    })),
+    rotateWidgetWebhookToken: vi.fn(async () => ({
+      enabled: true,
+      path: '/api/widgets/new-widget/webhook/next-token',
+      urlCandidates: ['http://localhost:32177/api/widgets/new-widget/webhook/next-token'],
+      cacheKey: 'webhook' as const
+    })),
     secrets: {
       list: vi.fn(async () => providers.map((p) => ({ ...p, auth: { type: 'header' as const, name: 'A' } })))
     }
@@ -158,7 +171,7 @@ describe('WidgetChatPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
 
     expect(await screen.findByText('show weather')).toBeInTheDocument();
-    expect(screen.getByText('Building...')).toBeInTheDocument();
+    expect(screen.getByText('Building…')).toBeInTheDocument();
     expect(scrollIntoView).toHaveBeenCalled();
   });
 
@@ -365,7 +378,7 @@ describe('WidgetChatPanel', () => {
 
     const select = await screen.findByLabelText(/refresh cadence/i) as HTMLSelectElement;
     const labels = Array.from(select.options).map((o) => o.textContent);
-    expect(labels).toEqual(['Live', '1 min', '5 min', '15 min', '1 hour', '6 hours', 'Daily']);
+    expect(labels).toEqual(['Live', '1 min', '5 min', '15 min', '1 hour', '6 hours', 'Daily', 'Event-driven']);
     expect(select.value).toBe('3600000');
   });
 
@@ -391,6 +404,31 @@ describe('WidgetChatPanel', () => {
     await userEvent.selectOptions(select, '300000');
 
     await waitFor(() => expect(api.setWidgetRefreshTtl).toHaveBeenCalledWith('u1', 300_000));
+  });
+
+  it('selecting event-driven enables webhook mode and shows the webhook URL', async () => {
+    const { api } = mockApi();
+    (window as any).api = api;
+    render(
+      <WidgetChatPanel
+        open={true}
+        mode="edit"
+        widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html' }}
+        widgetPreloadUrl=""
+        onClose={() => {}}
+        onCreated={() => {}}
+        onSent={() => {}}
+        onDeleted={() => {}}
+      />
+    );
+
+    const select = await screen.findByLabelText(/refresh cadence/i) as HTMLSelectElement;
+    await userEvent.selectOptions(select, 'event');
+
+    await waitFor(() => expect(api.setWidgetRefreshMode).toHaveBeenCalledWith('u1', 'event'));
+    expect(api.getWidgetWebhook).toHaveBeenCalledWith('u1');
+    expect(await screen.findByLabelText(/webhook url/i)).toHaveValue('http://localhost:32177/api/widgets/new-widget/webhook/token');
+    expect(screen.getByText('Cache key: webhook')).toBeInTheDocument();
   });
 
   it('create call includes the selected refresh ttl as the third argument', async () => {

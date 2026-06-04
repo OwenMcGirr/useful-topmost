@@ -1,7 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { WidgetChatMessage } from '../preload';
+import type { WidgetChatMessage, WidgetRefreshMode, WidgetWebhookInfo } from '../preload';
 import type { PublicProvider } from '../main/secrets-store';
 import { categorizeError, stripFailedPrefix } from './errors';
+
+interface WidgetWebhookSummary {
+  enabled: boolean;
+  cacheKey: 'webhook';
+  lastReceivedAt?: string;
+}
 
 interface WidgetChatPanelProps {
   open: boolean;
@@ -11,31 +17,34 @@ interface WidgetChatPanelProps {
     prompt: string;
     htmlUrl?: string;
     selectedProviderIds?: string[];
+    refreshMode?: WidgetRefreshMode;
     refreshTtlMs?: number;
+    webhook?: WidgetWebhookSummary;
   };
   initialMessage?: string;
   widgetPreloadUrl: string;
   onClose: () => void;
-  onCreated: (uuid: string, prompt: string, selectedProviderIds: string[] | undefined, refreshTtlMs: number) => void;
+  onCreated: (uuid: string, prompt: string, selectedProviderIds: string[] | undefined, refreshTtlMs: number, refreshMode?: WidgetRefreshMode, webhook?: WidgetWebhookSummary) => void;
   onSent: (uuid: string, prompt: string) => void;
   onDeleted: (uuid: string) => void;
   onAddProviderRequest?: (name: string) => void;
-  onRefreshChanged?: (uuid: string, refreshTtlMs: number) => void;
+  onRefreshChanged?: (uuid: string, refreshTtlMs: number, refreshMode?: WidgetRefreshMode, webhook?: WidgetWebhookSummary) => void;
 }
 
-interface RefreshPreset {
-  label: string;
-  ttlMs: number;
-}
+type RefreshChoice =
+  | { kind: 'live'; label: 'Live' }
+  | { kind: 'timed'; label: string; ttlMs: number }
+  | { kind: 'event'; label: 'Event-driven' };
 
-export const REFRESH_PRESETS: readonly RefreshPreset[] = [
-  { label: 'Live', ttlMs: 0 },
-  { label: '1 min', ttlMs: 60_000 },
-  { label: '5 min', ttlMs: 300_000 },
-  { label: '15 min', ttlMs: 900_000 },
-  { label: '1 hour', ttlMs: 3_600_000 },
-  { label: '6 hours', ttlMs: 21_600_000 },
-  { label: 'Daily', ttlMs: 86_400_000 }
+export const REFRESH_CHOICES: readonly RefreshChoice[] = [
+  { kind: 'live', label: 'Live' },
+  { kind: 'timed', label: '1 min', ttlMs: 60_000 },
+  { kind: 'timed', label: '5 min', ttlMs: 300_000 },
+  { kind: 'timed', label: '15 min', ttlMs: 900_000 },
+  { kind: 'timed', label: '1 hour', ttlMs: 3_600_000 },
+  { kind: 'timed', label: '6 hours', ttlMs: 21_600_000 },
+  { kind: 'timed', label: 'Daily', ttlMs: 86_400_000 },
+  { kind: 'event', label: 'Event-driven' }
 ];
 
 const DEFAULT_REFRESH_TTL_MS = 3_600_000;
@@ -152,6 +161,27 @@ function cacheBust(url?: string): string {
   return `${url}${url.includes('?') ? '&' : '?'}rev=${Date.now()}`;
 }
 
+function choiceValue(choice: RefreshChoice): string {
+  if (choice.kind === 'live') return '0';
+  if (choice.kind === 'event') return 'event';
+  return String(choice.ttlMs);
+}
+
+function selectedChoiceValue(mode: WidgetRefreshMode, ttlMs: number): string {
+  if (mode === 'event') return 'event';
+  if (mode === 'live' || ttlMs === 0) return '0';
+  return String(ttlMs);
+}
+
+function webhookSummary(info: WidgetWebhookInfo | null): WidgetWebhookSummary | undefined {
+  if (!info) return undefined;
+  return {
+    enabled: info.enabled,
+    cacheKey: info.cacheKey,
+    lastReceivedAt: info.lastReceivedAt
+  };
+}
+
 function isNearBottom(el: HTMLElement): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= 48;
 }
@@ -179,8 +209,10 @@ export default function WidgetChatPanel({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [expandedFailures, setExpandedFailures] = useState<Set<string>>(new Set());
   const [planSuggestions, setPlanSuggestions] = useState<Array<{ name: string; hostname: string }>>([]);
+  const [refreshMode, setRefreshMode] = useState<WidgetRefreshMode>('timed');
   const [refreshTtlMs, setRefreshTtlMs] = useState<number>(DEFAULT_REFRESH_TTL_MS);
   const [refreshDirty, setRefreshDirty] = useState<boolean>(false);
+  const [webhookInfo, setWebhookInfo] = useState<WidgetWebhookInfo | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
@@ -257,6 +289,8 @@ export default function WidgetChatPanel({
     if (!open) return;
     // Seed the refresh dropdown. Existing widgets without a stored value see
     // the default but we don't persist that until the user actively changes it.
+    const nextMode = widget?.refreshMode ?? (widget?.refreshTtlMs === 0 ? 'live' : 'timed');
+    setRefreshMode(nextMode);
     if (widget?.refreshTtlMs !== undefined) {
       setRefreshTtlMs(widget.refreshTtlMs);
       setRefreshDirty(true);
@@ -264,7 +298,14 @@ export default function WidgetChatPanel({
       setRefreshTtlMs(DEFAULT_REFRESH_TTL_MS);
       setRefreshDirty(false);
     }
-  }, [open, widget?.uuid, widget?.refreshTtlMs]);
+    setWebhookInfo(null);
+    if (widget?.uuid && nextMode === 'event') {
+      void window.api.getWidgetWebhook(widget.uuid).then((info) => {
+        if ('ok' in info && info.ok === false) return;
+        setWebhookInfo(info);
+      });
+    }
+  }, [open, widget?.uuid, widget?.refreshMode, widget?.refreshTtlMs]);
 
   useEffect(() => {
     if (!open || !currentUuid) return;
@@ -380,12 +421,38 @@ export default function WidgetChatPanel({
     });
   };
 
-  const handleRefreshChange = (next: number) => {
-    setRefreshTtlMs(next);
+  const handleRefreshChange = async (value: string) => {
     setRefreshDirty(true);
+    if (value === 'event') {
+      setRefreshMode('event');
+      if (currentUuid) {
+        const result = await window.api.setWidgetRefreshMode(currentUuid, 'event');
+        if (result.ok) {
+          const info = await window.api.getWidgetWebhook(currentUuid);
+          if (!('ok' in info && info.ok === false)) {
+            setWebhookInfo(info);
+            onRefreshChanged?.(currentUuid, refreshTtlMs, 'event', webhookSummary(info));
+          }
+        }
+      }
+      return;
+    }
+    setWebhookInfo(null);
+    if (value === '0') {
+      setRefreshMode('live');
+      setRefreshTtlMs(0);
+      if (currentUuid) {
+        void window.api.setWidgetRefreshTtl(currentUuid, 0);
+        onRefreshChanged?.(currentUuid, 0, 'live');
+      }
+      return;
+    }
+    const next = Number(value);
+    setRefreshMode('timed');
+    setRefreshTtlMs(next);
     if (currentUuid) {
       void window.api.setWidgetRefreshTtl(currentUuid, next);
-      onRefreshChanged?.(currentUuid, next);
+      onRefreshChanged?.(currentUuid, next, 'timed');
     }
   };
 
@@ -412,7 +479,7 @@ export default function WidgetChatPanel({
     setMessages((prev) => [
       ...prev,
       localMessage('user', trimmed),
-      localMessage('status', 'Building...', 'building')
+      localMessage('status', 'Building…', 'building')
     ]);
     setBuilding(true);
 
@@ -420,10 +487,25 @@ export default function WidgetChatPanel({
       if (!currentUuid) {
         const ids = Array.from(selectedIds);
         const { uuid } = await window.api.chatStartWidget(trimmed, ids, refreshTtlMs);
+        let createdWebhook: WidgetWebhookInfo | null = null;
+        if (refreshMode === 'event') {
+          const result = await window.api.setWidgetRefreshMode(uuid, 'event');
+          if (result.ok) {
+            const info = await window.api.getWidgetWebhook(uuid);
+            if (!('ok' in info && info.ok === false)) {
+              createdWebhook = info;
+              setWebhookInfo(info);
+            }
+          }
+        }
         createdUuidRef.current = uuid;
         autoCloseArmedRef.current = true;
         setCurrentUuid(uuid);
-        onCreated(uuid, trimmed, ids, refreshTtlMs);
+        if (refreshMode === 'event') {
+          onCreated(uuid, trimmed, ids, refreshTtlMs, refreshMode, webhookSummary(createdWebhook));
+        } else {
+          onCreated(uuid, trimmed, ids, refreshTtlMs);
+        }
       } else {
         const result = await window.api.chatSendWidget(currentUuid, trimmed);
         if (!result.ok) {
@@ -581,8 +663,8 @@ export default function WidgetChatPanel({
           <span>Refresh{refreshDirty || mode === 'create' ? '' : ' (default)'}</span>
           <select
             aria-label="Refresh cadence"
-            value={refreshTtlMs}
-            onChange={(e) => handleRefreshChange(Number(e.target.value))}
+            value={selectedChoiceValue(refreshMode, refreshTtlMs)}
+            onChange={(e) => void handleRefreshChange(e.target.value)}
             style={{
               background: '#0d1117',
               color: '#e6edf3',
@@ -592,11 +674,43 @@ export default function WidgetChatPanel({
               fontSize: 12
             }}
           >
-            {REFRESH_PRESETS.map((p) => (
-              <option key={p.ttlMs} value={p.ttlMs}>{p.label}</option>
+            {REFRESH_CHOICES.map((p) => (
+              <option key={choiceValue(p)} value={choiceValue(p)}>{p.label}</option>
             ))}
           </select>
         </label>
+        {refreshMode === 'event' && webhookInfo && (
+          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: '#8b949e' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ flex: '0 0 auto' }}>Webhook URL</span>
+              <input
+                readOnly
+                value={webhookInfo.urlCandidates[0] ?? webhookInfo.path}
+                aria-label="Webhook URL"
+                style={{
+                  minWidth: 0,
+                  flex: 1,
+                  background: '#0d1117',
+                  color: '#e6edf3',
+                  border: '1px solid #30363d',
+                  borderRadius: 6,
+                  padding: '4px 6px',
+                  fontSize: 11
+                }}
+              />
+              <button
+                style={{ ...BTN, fontSize: 11, padding: '4px 8px' }}
+                onClick={() => void navigator.clipboard?.writeText(webhookInfo.urlCandidates[0] ?? webhookInfo.path)}
+              >
+                Copy
+              </button>
+            </div>
+            <div>Cache key: webhook</div>
+            {webhookInfo.lastReceivedAt && (
+              <div>Last event: {new Date(webhookInfo.lastReceivedAt).toLocaleString()}</div>
+            )}
+          </div>
+        )}
       </div>
 
       <div style={PROVIDERS_BOX} aria-label="Provider selection">

@@ -1,8 +1,15 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 
 export type WidgetSize = 'small' | 'wide' | 'large';
+export type WidgetRefreshMode = 'timed' | 'live' | 'event';
+
+export interface WidgetWebhookConfig {
+  token: string;
+  cacheKey: 'webhook';
+  lastReceivedAt?: string;
+}
 
 export interface WidgetSummary {
   sources: string[];
@@ -35,6 +42,8 @@ export interface WidgetMeta {
    * 0 means "Live" — bypass the cache.
    */
   refreshTtlMs?: number;
+  refreshMode?: WidgetRefreshMode;
+  webhook?: WidgetWebhookConfig;
 }
 
 export interface Widget {
@@ -46,6 +55,12 @@ export interface Widget {
   selectedProviderIds?: string[];
   summary?: WidgetSummary;
   refreshTtlMs?: number;
+  refreshMode?: WidgetRefreshMode;
+  webhook?: {
+    enabled: boolean;
+    cacheKey: 'webhook';
+    lastReceivedAt?: string;
+  };
 }
 
 export type WidgetChatRole = 'user' | 'status';
@@ -75,12 +90,27 @@ export interface WidgetStore {
   setProviders(uuid: string, providerIds: string[] | undefined): Promise<void>;
   setSummary(uuid: string, summary: WidgetSummary | undefined): Promise<void>;
   setRefreshTtl(uuid: string, ttlMs: number | undefined): Promise<void>;
+  setRefreshMode(uuid: string, mode: WidgetRefreshMode, ttlMs?: number): Promise<void>;
+  ensureWebhook(uuid: string): Promise<WidgetWebhookConfig>;
+  rotateWebhookToken(uuid: string): Promise<WidgetWebhookConfig>;
+  markWebhookReceived(uuid: string, receivedAt: string): Promise<void>;
   replaceWidgetHtml(uuid: string, html: string): Promise<void>;
   readWidgetHtml(uuid: string): Promise<string | null>;
   widgetsRoot(): string;
   htmlPath(uuid: string): string;
   logPath(uuid: string): string;
   dir(uuid: string): string;
+}
+
+export function effectiveRefreshMode(meta: Pick<WidgetMeta, 'refreshMode' | 'refreshTtlMs'>): WidgetRefreshMode {
+  if (meta.refreshMode === 'timed' || meta.refreshMode === 'live' || meta.refreshMode === 'event') {
+    return meta.refreshMode;
+  }
+  return meta.refreshTtlMs === 0 ? 'live' : 'timed';
+}
+
+function createWebhookToken(): string {
+  return randomBytes(32).toString('base64url');
 }
 
 export function createWidgetStore(root: string): WidgetStore {
@@ -152,7 +182,13 @@ export function createWidgetStore(root: string): WidgetStore {
             size: meta.size,
             selectedProviderIds: meta.selectedProviderIds,
             summary: meta.summary,
-            refreshTtlMs: meta.refreshTtlMs
+            refreshTtlMs: meta.refreshTtlMs,
+            refreshMode: effectiveRefreshMode(meta),
+            webhook: meta.webhook ? {
+              enabled: effectiveRefreshMode(meta) === 'event',
+              cacheKey: 'webhook',
+              lastReceivedAt: meta.webhook.lastReceivedAt
+            } : undefined
           });
         } catch {
           // Skip a widget whose meta.json was deleted out-of-band.
@@ -223,9 +259,55 @@ export function createWidgetStore(root: string): WidgetStore {
     async setRefreshTtl(uuid, ttlMs) {
       const meta = await readMeta(uuid);
       const next = { ...meta };
-      if (ttlMs === undefined) delete next.refreshTtlMs;
-      else next.refreshTtlMs = ttlMs;
+      if (ttlMs === undefined) {
+        delete next.refreshTtlMs;
+        if (next.refreshMode !== 'event') delete next.refreshMode;
+      } else {
+        next.refreshTtlMs = ttlMs;
+        next.refreshMode = ttlMs === 0 ? 'live' : 'timed';
+      }
       await writeMeta(uuid, next);
+    },
+
+    async setRefreshMode(uuid, mode, ttlMs) {
+      const meta = await readMeta(uuid);
+      const next = { ...meta, refreshMode: mode };
+      if (mode === 'event') {
+        if (!next.webhook) next.webhook = { token: createWebhookToken(), cacheKey: 'webhook' };
+      } else if (mode === 'live') {
+        next.refreshTtlMs = 0;
+      } else {
+        if (typeof ttlMs === 'number') next.refreshTtlMs = ttlMs;
+        else if (next.refreshTtlMs === 0) next.refreshTtlMs = undefined;
+      }
+      await writeMeta(uuid, next);
+    },
+
+    async ensureWebhook(uuid) {
+      const meta = await readMeta(uuid);
+      if (meta.webhook) return meta.webhook;
+      const webhook: WidgetWebhookConfig = { token: createWebhookToken(), cacheKey: 'webhook' };
+      await writeMeta(uuid, { ...meta, webhook });
+      return webhook;
+    },
+
+    async rotateWebhookToken(uuid) {
+      const meta = await readMeta(uuid);
+      const webhook: WidgetWebhookConfig = {
+        token: createWebhookToken(),
+        cacheKey: 'webhook',
+        lastReceivedAt: meta.webhook?.lastReceivedAt
+      };
+      await writeMeta(uuid, { ...meta, webhook });
+      return webhook;
+    },
+
+    async markWebhookReceived(uuid, receivedAt) {
+      const meta = await readMeta(uuid);
+      const webhook: WidgetWebhookConfig = meta.webhook
+        ? { ...meta.webhook, lastReceivedAt: receivedAt }
+        : { token: createWebhookToken(), cacheKey: 'webhook', lastReceivedAt: receivedAt };
+      await writeMeta(uuid, { ...meta, webhook });
     },
 
     async replaceWidgetHtml(uuid, html) {

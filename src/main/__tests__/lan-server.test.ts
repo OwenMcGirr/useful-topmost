@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createWidgetStore } from '../widget-store';
 import { createSecretsStore } from '../secrets-store';
 import { createLanServerController } from '../lan-server';
+import { readCache } from '../widget-cache-store';
 
 async function freshRoot(): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), 'lan-server-'));
@@ -258,6 +259,115 @@ describe('lan-server', () => {
     }
   });
 
+  it('handles event-driven webhook posts and hides raw tokens from metadata', async () => {
+    const root = await freshRoot();
+    const { widgets, uuid } = await createWidget(root);
+    const onWebhookEvent = vi.fn();
+    await widgets.setRefreshMode(uuid, 'event');
+    const token = (await widgets.getMeta(uuid)).webhook!.token;
+    const controller = createLanServerController({ widgets, secrets: createSecretsStore(root), onWebhookEvent });
+    const state = await controller.applyConfig({ enabled: true, port: 0 });
+    try {
+      const metadataBefore = await (await fetch(`http://127.0.0.1:${state.port}/api/widgets`)).json() as any[];
+      expect(metadataBefore[0].refreshMode).toBe('event');
+      expect(metadataBefore[0].webhook).toEqual({ enabled: true, cacheKey: 'webhook' });
+      expect(JSON.stringify(metadataBefore)).not.toContain(token);
+
+      const badToken = await fetch(`http://127.0.0.1:${state.port}/api/widgets/${uuid}/webhook/bad-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'bad' })
+      });
+      expect(badToken.status).toBe(403);
+
+      const missing = await fetch(`http://127.0.0.1:${state.port}/api/widgets/missing/webhook/${token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'missing' })
+      });
+      expect(missing.status).toBe(404);
+
+      const empty = await fetch(`http://127.0.0.1:${state.port}/api/widgets/${uuid}/webhook/${token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      expect(empty.status).toBe(400);
+
+      const malformed = await fetch(`http://127.0.0.1:${state.port}/api/widgets/${uuid}/webhook/${token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{'
+      });
+      expect(malformed.status).toBe(400);
+
+      const ok = await fetch(`http://127.0.0.1:${state.port}/api/widgets/${uuid}/webhook/${token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'opened' })
+      });
+      const body = await ok.json() as any;
+      expect(ok.status).toBe(200);
+      expect(body).toEqual({ ok: true, uuid, receivedAt: expect.any(String) });
+
+      const cache = await readCache(widgets.dir(uuid));
+      expect(cache.webhook.value).toEqual({ receivedAt: body.receivedAt, payload: { action: 'opened' } });
+      expect((await widgets.getMeta(uuid)).webhook?.lastReceivedAt).toBe(body.receivedAt);
+      expect(onWebhookEvent).toHaveBeenCalledWith({ uuid, receivedAt: body.receivedAt });
+    } finally {
+      await controller.stop();
+    }
+  });
+
+  it('emits widget-webhook events over SSE after webhook receipt', async () => {
+    const root = await freshRoot();
+    const { widgets, uuid } = await createWidget(root);
+    await widgets.setRefreshMode(uuid, 'event');
+    const token = (await widgets.getMeta(uuid)).webhook!.token;
+    const controller = createLanServerController({ widgets, secrets: createSecretsStore(root) });
+    const state = await controller.applyConfig({ enabled: true, port: 0 });
+    const abort = new AbortController();
+    try {
+      const events = await fetch(`http://127.0.0.1:${state.port}/api/events`, { signal: abort.signal });
+      const reader = events.body!.getReader();
+      await fetch(`http://127.0.0.1:${state.port}/api/widgets/${uuid}/webhook/${token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'opened' })
+      });
+
+      let textBody = '';
+      for (let i = 0; i < 10 && !textBody.includes('widget-webhook'); i += 1) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        textBody += new TextDecoder().decode(chunk.value);
+      }
+      expect(textBody).toContain('event: widget-webhook');
+      expect(textBody).toContain(uuid);
+    } finally {
+      abort.abort();
+      await controller.stop();
+    }
+  });
+
+  it('rejects webhook posts for non-event widgets', async () => {
+    const root = await freshRoot();
+    const { widgets, uuid } = await createWidget(root);
+    const webhook = await widgets.ensureWebhook(uuid);
+    const controller = createLanServerController({ widgets, secrets: createSecretsStore(root) });
+    const state = await controller.applyConfig({ enabled: true, port: 0 });
+    try {
+      const response = await fetch(`http://127.0.0.1:${state.port}/api/widgets/${uuid}/webhook/${webhook.token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'ignored' })
+      });
+      expect(response.status).toBe(409);
+      expect(await readCache(widgets.dir(uuid))).toEqual({});
+    } finally {
+      await controller.stop();
+    }
+  });
+
   it('serves a LAN client that preserves existing widget iframes while polling', async () => {
     const root = await freshRoot();
     const { widgets } = await createWidget(root);
@@ -280,6 +390,10 @@ describe('lan-server', () => {
       expect(client.body).toContain('section.__latestWidget');
       expect(client.body).toContain('updateBottomStrip(section);');
       expect(client.body).toContain('function refreshIntervalMs');
+      expect(client.body).toContain('function widgetRefreshMode');
+      expect(client.body).toContain('EventSource');
+      expect(client.body).toContain('widget-webhook');
+      expect(client.body).toContain('Waiting for event.');
       expect(client.body).toContain('?rev=');
       expect(client.body).toContain('if (section !== cursor) nextGrid.insertBefore(section, cursor)');
       expect(client.body).toContain('cursor = section.nextElementSibling');

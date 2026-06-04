@@ -220,7 +220,46 @@ describe('widget-store', () => {
     delete meta.chat;
     await fs.writeFile(metaPath, JSON.stringify(meta, null, 2));
 
-    expect(await store.list()).toEqual([{ uuid, prompt: 'legacy', created_at: meta.created_at, pinned: false }]);
+    expect(await store.list()).toEqual([expect.objectContaining({
+      uuid,
+      prompt: 'legacy',
+      created_at: meta.created_at,
+      pinned: false,
+      refreshMode: 'timed'
+    })]);
     expect((await store.getMeta(uuid)).chat).toBeUndefined();
+  });
+
+  it('sets refresh modes and creates webhook config for event mode', async () => {
+    const root = await freshRoot();
+    const store = createWidgetStore(root);
+    const uuid = await store.create('webhook widget');
+
+    await store.setRefreshMode(uuid, 'event');
+    const meta = await store.getMeta(uuid);
+    expect(meta.refreshMode).toBe('event');
+    expect(meta.webhook?.cacheKey).toBe('webhook');
+    expect(typeof meta.webhook?.token).toBe('string');
+    expect(meta.webhook?.token.length).toBeGreaterThanOrEqual(32);
+
+    const listed = (await store.list())[0];
+    expect(listed.refreshMode).toBe('event');
+    expect(listed.webhook).toEqual({ enabled: true, cacheKey: 'webhook' });
+    expect(JSON.stringify(listed)).not.toContain(meta.webhook!.token);
+  });
+
+  it('rotates webhook tokens and marks receipt time', async () => {
+    const root = await freshRoot();
+    const store = createWidgetStore(root);
+    const uuid = await store.create('webhook widget');
+    const first = await store.ensureWebhook(uuid);
+
+    const rotated = await store.rotateWebhookToken(uuid);
+    expect(rotated.token).not.toBe(first.token);
+
+    await store.markWebhookReceived(uuid, '2026-06-04T09:00:00.000Z');
+    const meta = await store.getMeta(uuid);
+    expect(meta.webhook?.lastReceivedAt).toBe('2026-06-04T09:00:00.000Z');
+    expect((await store.list())[0].webhook?.lastReceivedAt).toBe('2026-06-04T09:00:00.000Z');
   });
 });

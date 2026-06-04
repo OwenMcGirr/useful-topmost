@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TileState } from './types';
-import type { WidgetSize, WidgetFetchLogEntry } from '../preload';
+import type { WidgetRefreshMode, WidgetSize, WidgetFetchLogEntry } from '../preload';
 import { categorizeError } from './errors';
 
 interface Props {
@@ -13,7 +13,9 @@ interface Props {
   size?: WidgetSize;
   geekMode?: boolean;
   summary?: { sources: string[]; name?: string };
+  refreshMode?: WidgetRefreshMode;
   refreshTtlMs?: number;
+  webhookReceivedAt?: string;
   onRefresh: () => void;
   onDismiss: () => void;
   onEditChat: () => void;
@@ -219,10 +221,11 @@ export default function Tile(props: Props) {
 
   useEffect(() => {
     if (props.state.kind !== 'live') return;
+    if (props.refreshMode === 'event') return;
     const intervalMs = frameReloadIntervalMs(props.refreshTtlMs);
     const timer = window.setInterval(reloadFrame, intervalMs);
     return () => window.clearInterval(timer);
-  }, [props.state.kind, props.refreshTtlMs, props.htmlUrl]);
+  }, [props.state.kind, props.refreshMode, props.refreshTtlMs, props.htmlUrl]);
 
   const handleDelete = () => {
     if (confirmingDelete) {
@@ -233,7 +236,9 @@ export default function Tile(props: Props) {
   };
   const displayName = widgetDisplayName(props.prompt, props.summary);
   const statusLabel = props.state.kind === 'live'
-    ? updatedAt === null ? 'Loading…' : formatUpdatedAt(updatedAt)
+    ? props.refreshMode === 'event' && updatedAt === null
+      ? props.webhookReceivedAt ? 'Event received.' : 'Waiting for event.'
+      : updatedAt === null ? 'Loading…' : formatUpdatedAt(updatedAt)
     : props.state.kind === 'building' ? 'Building…' : 'Error';
 
   return (
