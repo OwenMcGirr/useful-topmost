@@ -3,7 +3,20 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import WidgetChatPanel from '../WidgetChatPanel';
 
-function mockApi(opts: { providers?: Array<{ id: string; name: string; hostnames: string[] }> } = {}) {
+function mockApi(opts: {
+  providers?: Array<{ id: string; name: string; hostnames: string[] }>;
+  webhookInfo?: {
+    enabled: true;
+    path: string;
+    urlCandidates: string[];
+    localUrlCandidates: string[];
+    publicUrl?: string;
+    publicBaseUrl?: string;
+    cacheKey: 'webhook';
+    lastReceivedAt?: string;
+  };
+  webhookTestResult?: { ok: true; receivedAt: string } | { ok: false; error: string };
+} = {}) {
   let readyHandler: ((uuid: string) => void) | null = null;
   let errorHandler: ((uuid: string, error: string) => void) | null = null;
   let planHandler: ((uuid: string, providers: Array<{ name: string; hostname: string }>) => void) | null = null;
@@ -22,16 +35,19 @@ function mockApi(opts: { providers?: Array<{ id: string; name: string; hostnames
     setWidgetProviders: vi.fn(async () => ({ ok: true })),
     setWidgetRefreshTtl: vi.fn(async () => ({ ok: true })),
     setWidgetRefreshMode: vi.fn(async () => ({ ok: true })),
-    getWidgetWebhook: vi.fn(async () => ({
+    getWidgetWebhook: vi.fn(async () => opts.webhookInfo ?? ({
       enabled: true,
       path: '/api/widgets/new-widget/webhook/token',
       urlCandidates: ['http://localhost:32177/api/widgets/new-widget/webhook/token'],
+      localUrlCandidates: ['http://localhost:32177/api/widgets/new-widget/webhook/token'],
       cacheKey: 'webhook' as const
     })),
+    testWidgetWebhook: vi.fn(async () => opts.webhookTestResult ?? ({ ok: true, receivedAt: '2026-06-04T12:00:00.000Z' })),
     rotateWidgetWebhookToken: vi.fn(async () => ({
       enabled: true,
       path: '/api/widgets/new-widget/webhook/next-token',
       urlCandidates: ['http://localhost:32177/api/widgets/new-widget/webhook/next-token'],
+      localUrlCandidates: ['http://localhost:32177/api/widgets/new-widget/webhook/next-token'],
       cacheKey: 'webhook' as const
     })),
     secrets: {
@@ -406,7 +422,7 @@ describe('WidgetChatPanel', () => {
     await waitFor(() => expect(api.setWidgetRefreshTtl).toHaveBeenCalledWith('u1', 300_000));
   });
 
-  it('selecting event-driven enables webhook mode and shows the webhook URL', async () => {
+  it('selecting event-driven enables webhook mode and shows local-only webhook setup', async () => {
     const { api } = mockApi();
     (window as any).api = api;
     render(
@@ -427,8 +443,127 @@ describe('WidgetChatPanel', () => {
 
     await waitFor(() => expect(api.setWidgetRefreshMode).toHaveBeenCalledWith('u1', 'event'));
     expect(api.getWidgetWebhook).toHaveBeenCalledWith('u1');
-    expect(await screen.findByLabelText(/webhook url/i)).toHaveValue('http://localhost:32177/api/widgets/new-widget/webhook/token');
-    expect(screen.getByText('Cache key: webhook')).toBeInTheDocument();
+    expect(await screen.findByText('Webhook setup')).toBeInTheDocument();
+    expect(screen.getByText('Local only')).toBeInTheDocument();
+    expect(screen.getByText('This URL works on your local network. External services need a public URL.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Local webhook URL')).toHaveValue('http://localhost:32177/api/widgets/new-widget/webhook/token');
+    expect(screen.queryByText('Cache key: webhook')).toBeNull();
+  });
+
+  it('shows public webhook setup when a public URL is configured', async () => {
+    const { api } = mockApi({
+      webhookInfo: {
+        enabled: true,
+        path: '/api/widgets/u1/webhook/token',
+        urlCandidates: [
+          'https://hooks.example.com/api/widgets/u1/webhook/token',
+          'http://localhost:32177/api/widgets/u1/webhook/token'
+        ],
+        localUrlCandidates: ['http://localhost:32177/api/widgets/u1/webhook/token'],
+        publicBaseUrl: 'https://hooks.example.com',
+        publicUrl: 'https://hooks.example.com/api/widgets/u1/webhook/token',
+        cacheKey: 'webhook'
+      }
+    });
+    (window as any).api = api;
+    render(
+      <WidgetChatPanel
+        open={true}
+        mode="edit"
+        widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html', refreshMode: 'event' }}
+        widgetPreloadUrl=""
+        onClose={() => {}}
+        onCreated={() => {}}
+        onSent={() => {}}
+        onDeleted={() => {}}
+      />
+    );
+
+    expect(await screen.findByText('Public')).toBeInTheDocument();
+    expect(screen.getByText('External services can send events to the public webhook URL.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Public webhook URL')).toHaveValue('https://hooks.example.com/api/widgets/u1/webhook/token');
+    expect(screen.getByLabelText('Local webhook URL')).toHaveValue('http://localhost:32177/api/widgets/u1/webhook/token');
+  });
+
+  it('copies public and local webhook URLs separately', async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    const { api } = mockApi({
+      webhookInfo: {
+        enabled: true,
+        path: '/api/widgets/u1/webhook/token',
+        urlCandidates: [
+          'https://hooks.example.com/api/widgets/u1/webhook/token',
+          'http://localhost:32177/api/widgets/u1/webhook/token'
+        ],
+        localUrlCandidates: ['http://localhost:32177/api/widgets/u1/webhook/token'],
+        publicBaseUrl: 'https://hooks.example.com',
+        publicUrl: 'https://hooks.example.com/api/widgets/u1/webhook/token',
+        cacheKey: 'webhook'
+      }
+    });
+    (window as any).api = api;
+    render(
+      <WidgetChatPanel
+        open={true}
+        mode="edit"
+        widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html', refreshMode: 'event' }}
+        widgetPreloadUrl=""
+        onClose={() => {}}
+        onCreated={() => {}}
+        onSent={() => {}}
+        onDeleted={() => {}}
+      />
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Copy public URL' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Copy local URL' }));
+
+    expect(writeText).toHaveBeenNthCalledWith(1, 'https://hooks.example.com/api/widgets/u1/webhook/token');
+    expect(writeText).toHaveBeenNthCalledWith(2, 'http://localhost:32177/api/widgets/u1/webhook/token');
+  });
+
+  it('tests the local webhook and shows success or failure status', async () => {
+    const { api } = mockApi();
+    (window as any).api = api;
+    render(
+      <WidgetChatPanel
+        open={true}
+        mode="edit"
+        widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html', refreshMode: 'event' }}
+        widgetPreloadUrl=""
+        onClose={() => {}}
+        onCreated={() => {}}
+        onSent={() => {}}
+        onDeleted={() => {}}
+      />
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Test local webhook' }));
+
+    await waitFor(() => expect(api.testWidgetWebhook).toHaveBeenCalledWith('u1'));
+    expect(await screen.findByText('Test event received.')).toBeInTheDocument();
+  });
+
+  it('shows a terminal failure message when the local webhook test fails', async () => {
+    const { api } = mockApi({ webhookTestResult: { ok: false, error: 'Local network server is off' } });
+    (window as any).api = api;
+    render(
+      <WidgetChatPanel
+        open={true}
+        mode="edit"
+        widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html', refreshMode: 'event' }}
+        widgetPreloadUrl=""
+        onClose={() => {}}
+        onCreated={() => {}}
+        onSent={() => {}}
+        onDeleted={() => {}}
+      />
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Test local webhook' }));
+
+    expect(await screen.findByText('Local network server is off.')).toBeInTheDocument();
   });
 
   it('create call includes the selected refresh ttl as the third argument', async () => {

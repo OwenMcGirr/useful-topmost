@@ -9,12 +9,26 @@ interface LanPrefs {
 
 const DEFAULT_PREFS: LanPrefs = { enabled: false, port: 32177 };
 
+function normalizePublicWebhookBaseUrl(value: string): string | null {
+  const trimmed = value.trim().replace(/\/+$/, '');
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'https:') return null;
+    if (parsed.pathname !== '/' || parsed.search || parsed.hash) return null;
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeState(state: LanServerState | null): LanServerState {
   return state ?? { running: false, port: DEFAULT_PREFS.port, urls: [] };
 }
 
 export default function LanSettings() {
   const [prefs, setPrefs] = useState<LanPrefs | null>(null);
+  const [publicWebhookBaseUrl, setPublicWebhookBaseUrl] = useState('');
   const [state, setState] = useState<LanServerState | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,6 +41,7 @@ export default function LanSettings() {
     void (async () => {
       const current = await window.api.prefs.get();
       setPrefs(current.lanServer ?? DEFAULT_PREFS);
+      setPublicWebhookBaseUrl(current.webhookPublicBaseUrl ?? '');
       await refreshState();
     })();
   }, []);
@@ -36,15 +51,32 @@ export default function LanSettings() {
       setError('Port must be between 1024 and 65535.');
       return;
     }
+    const normalizedPublicUrl = normalizePublicWebhookBaseUrl(publicWebhookBaseUrl);
+    if (publicWebhookBaseUrl.trim() && !normalizedPublicUrl) {
+      setError('Public webhook base URL must be an HTTPS origin.');
+      return;
+    }
 
     const previous = prefs ?? DEFAULT_PREFS;
+    const previousPublicUrl = publicWebhookBaseUrl;
     setPrefs(next);
+    if (normalizedPublicUrl) setPublicWebhookBaseUrl(normalizedPublicUrl);
     setSaving(true);
     setError(null);
     const result = await window.api.prefs.setLanServer(next);
     if (!result.ok) {
       setPrefs(previous);
       setError(result.error.endsWith('.') ? result.error : `${result.error}.`);
+      setSaving(false);
+      return;
+    }
+    const publicUrlResult = await window.api.prefs.setWebhookPublicBaseUrl(normalizedPublicUrl);
+    if (!publicUrlResult.ok) {
+      setPrefs(previous);
+      setPublicWebhookBaseUrl(previousPublicUrl);
+      setError(publicUrlResult.error.endsWith('.') ? publicUrlResult.error : `${publicUrlResult.error}.`);
+      setSaving(false);
+      return;
     }
     await refreshState();
     setSaving(false);
@@ -86,6 +118,21 @@ export default function LanSettings() {
           aria-label="Port"
         />
       </label>
+
+      <label style={FIELD}>
+        Public webhook base URL
+        <input
+          style={{ ...INPUT, marginTop: 6 }}
+          type="url"
+          value={publicWebhookBaseUrl}
+          onChange={(e) => setPublicWebhookBaseUrl(e.target.value)}
+          placeholder="https://example.com"
+          aria-label="Public webhook base URL"
+        />
+      </label>
+      <p style={{ fontSize: 12, opacity: 0.7, marginTop: -6, lineHeight: 1.5 }}>
+        Used to build webhook URLs for external services. Leave blank if you only use local network events.
+      </p>
 
       <button style={BTN_PRIMARY} onClick={() => void save(prefs)} disabled={saving}>
         {saving ? 'Saving…' : 'Save local network settings'}

@@ -5,7 +5,7 @@ import type { IpcMain, WebContents } from 'electron';
 import { effectiveRefreshMode, type WidgetRefreshMode, type WidgetStore, type WidgetSummary } from './widget-store';
 import type { SecretsStore, Provider } from './secrets-store';
 import type { OnboardingStore } from './onboarding-store';
-import type { PrefsStore, UpdateChannel } from './prefs-store';
+import { normalizeWebhookPublicBaseUrl, type PrefsStore, type UpdateChannel } from './prefs-store';
 import type { LanServerController } from './lan-server';
 import type { StartupController, StartupState } from './startup';
 import type { runCodex as RunCodexFn } from './codex-runner';
@@ -67,6 +67,9 @@ interface WidgetWebhookInfo {
   enabled: boolean;
   path: string;
   urlCandidates: string[];
+  localUrlCandidates: string[];
+  publicUrl?: string;
+  publicBaseUrl?: string;
   cacheKey: 'webhook';
   lastReceivedAt?: string;
 }
@@ -326,13 +329,45 @@ export function registerIpc(
     const bases = lanState?.running
       ? [...lanState.urls, `http://localhost:${lanState.port}/`]
       : [`http://localhost:${lanState?.port ?? 32177}/`];
+    const localUrlCandidates = uniqueUrls(bases.map((base) => `${base.replace(/\/+$/, '')}${webhookPath}`));
+    const currentPrefs = await prefs.get();
+    const publicBaseUrl = currentPrefs.webhookPublicBaseUrl;
+    const publicUrl = publicBaseUrl ? `${publicBaseUrl}${webhookPath}` : undefined;
     return {
       enabled: true,
       path: webhookPath,
-      urlCandidates: uniqueUrls(bases.map((base) => `${base.replace(/\/+$/, '')}${webhookPath}`)),
+      urlCandidates: uniqueUrls([...(publicUrl ? [publicUrl] : []), ...localUrlCandidates]),
+      localUrlCandidates,
+      ...(publicBaseUrl && publicUrl ? { publicBaseUrl, publicUrl } : {}),
       cacheKey: 'webhook',
       lastReceivedAt: webhook.lastReceivedAt
     };
+  };
+
+  const testWidgetWebhook = async (uuid: string): Promise<{ ok: true; receivedAt: string } | { ok: false; error: string }> => {
+    const info = await getWidgetWebhookInfo(uuid);
+    if ('ok' in info && info.ok === false) return info;
+    const lanState = lan?.getState();
+    if (!lanState?.running) return { ok: false as const, error: 'Local network server is off' };
+    const url = `http://localhost:${lanState.port}${info.path}`;
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ test: true, source: 'Useful Topmost' })
+      });
+      const body = await response.json().catch(() => null) as { receivedAt?: unknown; error?: unknown } | null;
+      if (!response.ok) {
+        const error = typeof body?.error === 'string' && body.error ? body.error : 'Could not reach the local webhook endpoint';
+        return { ok: false as const, error };
+      }
+      if (typeof body?.receivedAt !== 'string') {
+        return { ok: false as const, error: 'Could not confirm the local webhook test' };
+      }
+      return { ok: true as const, receivedAt: body.receivedAt };
+    } catch {
+      return { ok: false as const, error: 'Could not reach the local webhook endpoint' };
+    }
   };
 
   const trackRun = (uuid: string): AbortController => {
@@ -579,6 +614,8 @@ export function registerIpc(
   });
 
   ipcMain.handle('widget:getWebhook', async (_event, uuid: string) => getWidgetWebhookInfo(uuid));
+
+  ipcMain.handle('widget:testWebhook', async (_event, uuid: string) => testWidgetWebhook(uuid));
 
   ipcMain.handle('widget:rotateWebhookToken', async (_event, uuid: string) => {
     let meta;
@@ -862,6 +899,17 @@ export function registerIpc(
     }
     await prefs.setUpdateChannel(value);
     onUpdateChannelChanged?.(value);
+    return { ok: true as const };
+  });
+
+  ipcMain.handle('prefs:setWebhookPublicBaseUrl', async (_event, value: unknown) => {
+    if (value !== null && typeof value !== 'string') {
+      return { ok: false as const, error: 'public webhook base URL must be an HTTPS origin' };
+    }
+    if (typeof value === 'string' && value.trim() !== '' && !normalizeWebhookPublicBaseUrl(value)) {
+      return { ok: false as const, error: 'public webhook base URL must be an HTTPS origin' };
+    }
+    await prefs.setWebhookPublicBaseUrl(value);
     return { ok: true as const };
   });
 

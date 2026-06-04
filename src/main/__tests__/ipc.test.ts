@@ -373,6 +373,26 @@ describe('ipc', () => {
     expect((await ipc.invoke('prefs:get')).updateChannel).toBe('stable');
   });
 
+  it('prefs:setWebhookPublicBaseUrl validates, persists, and clears the public URL origin', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    expect(await ipc.invoke('prefs:setWebhookPublicBaseUrl', 'https://hooks.example.com/')).toEqual({ ok: true });
+    expect((await ipc.invoke('prefs:get')).webhookPublicBaseUrl).toBe('https://hooks.example.com');
+
+    expect(await ipc.invoke('prefs:setWebhookPublicBaseUrl', '')).toEqual({ ok: true });
+    expect((await ipc.invoke('prefs:get')).webhookPublicBaseUrl).toBeUndefined();
+
+    const bad = await ipc.invoke('prefs:setWebhookPublicBaseUrl', 'http://hooks.example.com/path');
+    expect(bad.ok).toBe(false);
+  });
+
   it('startup:get returns the controller state', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);
@@ -533,7 +553,7 @@ describe('ipc', () => {
     expect(meta.webhook?.cacheKey).toBe('webhook');
   });
 
-  it('widget:getWebhook returns path and URL candidates, and rotate changes the URL', async () => {
+  it('widget:getWebhook returns public and local URL candidates, and rotate changes the URL', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);
     const secrets = createSecretsStore(root);
@@ -544,7 +564,9 @@ describe('ipc', () => {
       getState: () => ({ running: true, port: 43210, urls: ['http://192.168.1.2:43210/'] })
     };
 
-    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root), lan as any);
+    const prefs = createPrefsStore(root);
+    await prefs.setWebhookPublicBaseUrl('https://hooks.example.com/');
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, prefs, lan as any);
     const uuid = await store.create('p');
 
     expect((await ipc.invoke('widget:getWebhook', uuid)).ok).toBe(false);
@@ -554,13 +576,43 @@ describe('ipc', () => {
     expect(first.enabled).toBe(true);
     expect(first.cacheKey).toBe('webhook');
     expect(first.path).toContain(`/api/widgets/${uuid}/webhook/`);
+    expect(first.publicBaseUrl).toBe('https://hooks.example.com');
+    expect(first.publicUrl).toContain(`https://hooks.example.com/api/widgets/${uuid}/webhook/`);
+    expect(first.urlCandidates[0]).toBe(first.publicUrl);
+    expect(first.localUrlCandidates).toEqual(expect.arrayContaining([
+      expect.stringContaining(`http://192.168.1.2:43210/api/widgets/${uuid}/webhook/`),
+      expect.stringContaining(`http://localhost:43210/api/widgets/${uuid}/webhook/`)
+    ]));
     expect(first.urlCandidates).toEqual(expect.arrayContaining([
+      expect.stringContaining(`https://hooks.example.com/api/widgets/${uuid}/webhook/`),
       expect.stringContaining(`http://192.168.1.2:43210/api/widgets/${uuid}/webhook/`),
       expect.stringContaining(`http://localhost:43210/api/widgets/${uuid}/webhook/`)
     ]));
 
     const rotated = await ipc.invoke('widget:rotateWebhookToken', uuid);
     expect(rotated.path).not.toBe(first.path);
+  });
+
+  it('widget:testWebhook rejects non-event widgets and unavailable LAN server', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+    const lan = {
+      getState: () => ({ running: false, port: 32177, urls: [] })
+    };
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root), lan as any);
+    const uuid = await store.create('p');
+
+    const nonEvent = await ipc.invoke('widget:testWebhook', uuid);
+    expect(nonEvent).toEqual({ ok: false, error: 'widget is not event-driven' });
+
+    await ipc.invoke('widget:setRefreshMode', uuid, 'event');
+    const unavailable = await ipc.invoke('widget:testWebhook', uuid);
+    expect(unavailable).toEqual({ ok: false, error: 'Local network server is off' });
   });
 
   it('widget:create with refreshTtlMs persists it without adding a cadence directive to the prompt', async () => {
