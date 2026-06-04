@@ -478,6 +478,56 @@ describe('ipc', () => {
     expect(str.ok).toBe(false);
   });
 
+  it('widget:setRefreshMode validates mode and enables event webhook metadata', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+    const uuid = await store.create('p');
+
+    const bad = await ipc.invoke('widget:setRefreshMode', uuid, 'sometimes');
+    expect(bad.ok).toBe(false);
+
+    expect(await ipc.invoke('widget:setRefreshMode', uuid, 'event')).toEqual({ ok: true });
+    const meta = await store.getMeta(uuid);
+    expect(meta.refreshMode).toBe('event');
+    expect(meta.webhook?.cacheKey).toBe('webhook');
+  });
+
+  it('widget:getWebhook returns path and URL candidates, and rotate changes the URL', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+    const lan = {
+      getState: () => ({ running: true, port: 43210, urls: ['http://192.168.1.2:43210/'] })
+    };
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root), lan as any);
+    const uuid = await store.create('p');
+
+    expect((await ipc.invoke('widget:getWebhook', uuid)).ok).toBe(false);
+
+    await ipc.invoke('widget:setRefreshMode', uuid, 'event');
+    const first = await ipc.invoke('widget:getWebhook', uuid);
+    expect(first.enabled).toBe(true);
+    expect(first.cacheKey).toBe('webhook');
+    expect(first.path).toContain(`/api/widgets/${uuid}/webhook/`);
+    expect(first.urlCandidates).toEqual(expect.arrayContaining([
+      expect.stringContaining(`http://192.168.1.2:43210/api/widgets/${uuid}/webhook/`),
+      expect.stringContaining(`http://localhost:43210/api/widgets/${uuid}/webhook/`)
+    ]));
+
+    const rotated = await ipc.invoke('widget:rotateWebhookToken', uuid);
+    expect(rotated.path).not.toBe(first.path);
+  });
+
   it('widget:create with refreshTtlMs persists it without adding a cadence directive to the prompt', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);
@@ -906,6 +956,29 @@ describe('ipc', () => {
     expect(await ipc.invokeWithEvent('app:cache:set', event, 'weather', { temp: 18 }, 86_400_000)).toEqual({ ok: true });
     const after = JSON.parse(await fs.readFile(path.join(store.dir(uuid), 'cache.json'), 'utf8'));
     expect(after.weather.value).toEqual({ temp: 17 });
+  });
+
+  it('app:cache event mode returns unexpired cache entries', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const uuid = await store.create('p');
+    await fs.writeFile(path.join(store.dir(uuid), 'index.html'), '<html></html>');
+    await store.setRefreshMode(uuid, 'event');
+    await fs.writeFile(path.join(store.dir(uuid), 'cache.json'), JSON.stringify({
+      webhook: { value: { receivedAt: '2026-06-04T09:00:00.000Z', payload: { ok: true } }, fetchedAt: Date.now() - 600_000, expiresAt: Date.now() - 1000 }
+    }));
+    const senderUrl = pathToFileURL(path.join(store.dir(uuid), 'index.html')).href;
+    const event = { senderFrame: { url: senderUrl } } as any;
+
+    const got = await ipc.invokeWithEvent('app:cache:get', event, 'webhook', 1);
+    expect(got.value).toEqual({ receivedAt: '2026-06-04T09:00:00.000Z', payload: { ok: true } });
   });
 
   it('app:cache:get keeps legacy expiresAt-only cache entries compatible', async () => {

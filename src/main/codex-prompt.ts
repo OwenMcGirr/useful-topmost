@@ -63,6 +63,14 @@ Data:
 - Use a stable string key per data source ("weather", "top-stories"). If you change the SHAPE of the cached value in a chat edit, bump the key (e.g. "weather-v2") to avoid stale-shape reads.
 - Use setInterval only for visual ticking such as clocks, countdowns, blinking cursors, and animations.
 
+Event-driven data:
+- Some widgets may be configured as event-driven webhook widgets.
+- For webhook widgets, read the latest payload from window.cache.get("webhook", async () => null).
+- The cached value shape is { receivedAt: string, payload: unknown }.
+- If it returns null, render a compact waiting state such as "Waiting for webhook event."
+- Do not poll, use setInterval, or display refresh timers for webhook-driven data.
+- The host app reloads the widget when a webhook event arrives.
+
 Local commands:
 - For explicit local CLI tasks, use window.local.exec(command, args). Pass the executable name as command and each argument as a separate string in args; do not build shell command strings.
 - Example: const result = await window.local.exec("gh", ["api", "user", "--jq", ".login"]);

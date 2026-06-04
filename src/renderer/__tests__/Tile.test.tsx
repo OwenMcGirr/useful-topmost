@@ -324,6 +324,34 @@ describe('Tile', () => {
     expect(webview.reload).toHaveBeenCalledTimes(1);
   });
 
+  it('does not schedule automatic reload for event-driven tiles', () => {
+    vi.useFakeTimers();
+    const { container } = render(
+      <Tile
+        uuid="u1"
+        prompt="show weather"
+        state={{ kind: 'live' }}
+        htmlUrl="file:///x"
+        widgetPreloadUrl=""
+        refreshMode="event"
+        refreshTtlMs={1_000}
+        onRefresh={() => {}}
+        onDismiss={() => {}}
+        onEditChat={() => {}}
+        onTogglePinned={() => {}}
+        onCycleSize={() => {}}
+        onCancel={() => {}}
+        onRetry={() => {}}
+      />
+    );
+    const webview = container.querySelector('webview') as any;
+    webview.reload = vi.fn();
+
+    expect(screen.getByLabelText('Widget details')).toHaveTextContent('Waiting for event.');
+    act(() => { vi.advanceTimersByTime(5_000); });
+    expect(webview.reload).not.toHaveBeenCalled();
+  });
+
   it('does not schedule reload for building or error tiles', () => {
     vi.useFakeTimers();
     const onRefresh = vi.fn();

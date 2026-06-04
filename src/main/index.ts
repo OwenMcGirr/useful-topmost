@@ -114,7 +114,13 @@ app.whenReady().then(async () => {
   const secrets = createSecretsStore(userData);
   const onboarding = createOnboardingStore(userData);
   const prefs = createPrefsStore(userData);
-  const lan = createLanServerController({ widgets: store, secrets });
+  const lan = createLanServerController({
+    widgets: store,
+    secrets,
+    onWebhookEvent: (event) => {
+      mainWindow?.webContents.send('widget:webhook', event);
+    }
+  });
   const startup = createStartupController({ app });
   stopLanServer = () => lan.stop();
   registerIpc(ipcMain, store, secrets, onboarding, runCodex, () => mainWindow!.webContents, prefs, lan, startup);

@@ -1,11 +1,11 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import os from 'node:os';
 import type { AddressInfo } from 'node:net';
-import type { WidgetStore } from './widget-store';
+import { effectiveRefreshMode, type WidgetStore } from './widget-store';
 import type { SecretsStore } from './secrets-store';
 import { appFetch as defaultAppFetch } from './proxy';
 import type { FetchEnvelope } from './proxy';
-import { getCacheEntry, writeCacheEntry } from './widget-cache-store';
+import { getCacheEntry, getCacheEntryUnexpired, writeCacheEntry, writeWebhookCacheEntry } from './widget-cache-store';
 
 export interface LanServerConfig {
   enabled: boolean;
@@ -29,6 +29,7 @@ interface Deps {
   widgets: WidgetStore;
   secrets: SecretsStore;
   appFetch?: typeof defaultAppFetch;
+  onWebhookEvent?: (event: { uuid: string; receivedAt: string }) => void;
 }
 
 const CLIENT_JS = `
@@ -51,6 +52,12 @@ function widgetState(widget) {
   return widget.state === 'building' ? 'building' : 'live';
 }
 
+function widgetRefreshMode(widget) {
+  if (widget.refreshMode === 'event') return 'event';
+  if (widget.refreshMode === 'live' || widget.refreshTtlMs === 0) return 'live';
+  return 'timed';
+}
+
 function widgetDisplayName(widget) {
   const name = widget && widget.summary && typeof widget.summary.name === 'string'
     ? widget.summary.name.trim()
@@ -67,11 +74,15 @@ function formatUpdatedAt(timestamp) {
 function widgetStatusLabel(section, widget) {
   const state = widgetState(widget);
   if (state === 'building') return 'Building…';
+  if (widgetRefreshMode(widget) === 'event' && !section.dataset.updatedAt) {
+    return section.dataset.webhookReceivedAt ? 'Event received.' : 'Waiting for event.';
+  }
   const updatedAt = section.dataset.updatedAt;
   return updatedAt ? formatUpdatedAt(updatedAt) : 'Loading…';
 }
 
 function refreshIntervalMs(widget) {
+  if (widgetRefreshMode(widget) === 'event') return Number.POSITIVE_INFINITY;
   if (widget.refreshTtlMs === 0) return LIVE_RELOAD_INTERVAL_MS;
   if (Number.isFinite(widget.refreshTtlMs) && widget.refreshTtlMs > 0) return widget.refreshTtlMs;
   return DEFAULT_REFRESH_TTL_MS;
@@ -204,6 +215,10 @@ function updateTile(section, widget) {
   const now = Date.now();
   const intervalMs = refreshIntervalMs(widget);
   const lastReloadAt = Number(section.dataset.lastReloadAt || '0');
+  const mode = widgetRefreshMode(widget);
+  const webhookReceivedAt = widget.webhook && widget.webhook.lastReceivedAt ? String(widget.webhook.lastReceivedAt) : '';
+  const webhookChanged = mode === 'event' && webhookReceivedAt && section.dataset.webhookReceivedAt !== webhookReceivedAt;
+  section.dataset.webhookReceivedAt = webhookReceivedAt;
   if (!iframe) {
     iframe = document.createElement('iframe');
     iframe.addEventListener('load', function () {
@@ -216,11 +231,33 @@ function updateTile(section, widget) {
   } else if (!iframe.getAttribute('src')) {
     iframe.src = widgetSrc(widget);
     section.dataset.lastReloadAt = String(now);
-  } else if (now - lastReloadAt >= intervalMs) {
+  } else if (webhookChanged) {
+    delete section.dataset.updatedAt;
+    iframe.src = widgetSrc(widget, webhookReceivedAt);
+    section.dataset.lastReloadAt = String(now);
+    updateBottomStrip(section, widget);
+  } else if (mode !== 'event' && now - lastReloadAt >= intervalMs) {
     iframe.src = widgetSrc(widget, now);
     section.dataset.lastReloadAt = String(now);
   }
   iframe.title = widgetTitle(widget);
+}
+
+function reloadWidgetFromEvent(uuid, receivedAt) {
+  const section = grid && grid.querySelector('section[data-uuid="' + CSS.escape(uuid) + '"]');
+  if (!section) {
+    void load();
+    return;
+  }
+  section.dataset.webhookReceivedAt = receivedAt || '';
+  delete section.dataset.updatedAt;
+  const iframe = section.querySelector('iframe');
+  if (iframe) {
+    iframe.src = widgetSrc({ uuid }, receivedAt || Date.now());
+    section.dataset.lastReloadAt = String(Date.now());
+    updateBottomStrip(section);
+  }
+  void load();
 }
 
 function findTile(nextGrid, uuid) {
@@ -267,6 +304,22 @@ async function load() {
 
 load();
 setInterval(load, 10000);
+
+try {
+  const events = new EventSource('/api/events');
+  events.addEventListener('widget-webhook', function (event) {
+    try {
+      const payload = JSON.parse(event.data);
+      if (payload && typeof payload.uuid === 'string') {
+        reloadWidgetFromEvent(payload.uuid, payload.receivedAt);
+      }
+    } catch {
+      void load();
+    }
+  });
+} catch {
+  // Polling above remains the fallback when EventSource is unavailable.
+}
 `;
 
 const INDEX_HTML = `<!doctype html>
@@ -450,7 +503,7 @@ function effectiveRefreshTtlMs(metaRefreshTtlMs: number | undefined, requestedTt
   return metaRefreshTtlMs ?? validRequestedTtl(requestedTtlMs) ?? DEFAULT_REFRESH_TTL_MS;
 }
 
-function readJson(req: IncomingMessage): Promise<any> {
+function readJson(req: IncomingMessage, requireBody = false): Promise<any> {
   return new Promise((resolve, reject) => {
     let raw = '';
     req.setEncoding('utf8');
@@ -463,7 +516,12 @@ function readJson(req: IncomingMessage): Promise<any> {
     });
     req.on('end', () => {
       try {
-        resolve(raw ? JSON.parse(raw) : {});
+        if (!raw) {
+          if (requireBody) reject(new Error('Request body must be valid JSON.'));
+          else resolve({});
+          return;
+        }
+        resolve(JSON.parse(raw));
       } catch {
         reject(new Error('Request body must be valid JSON.'));
       }
@@ -515,9 +573,17 @@ async function widgetExists(widgets: WidgetStore, uuid: string): Promise<boolean
   return list.some((widget) => widget.uuid === uuid);
 }
 
-export function createLanServerController({ widgets, secrets, appFetch = defaultAppFetch }: Deps): LanServerController {
+export function createLanServerController({ widgets, secrets, appFetch = defaultAppFetch, onWebhookEvent }: Deps): LanServerController {
   let server: Server | null = null;
   let state: LanServerState = { running: false, port: 32177, urls: [] };
+  const eventClients = new Set<ServerResponse>();
+
+  const emitWebhookEvent = (event: { uuid: string; receivedAt: string }): void => {
+    const payload = JSON.stringify(event);
+    for (const client of eventClients) {
+      client.write(`event: widget-webhook\ndata: ${payload}\n\n`);
+    }
+  };
 
   const route = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const parsedUrl = new URL(req.url ?? '/', 'http://lan.local');
@@ -538,6 +604,20 @@ export function createLanServerController({ widgets, secrets, appFetch = default
       return;
     }
 
+    if (req.method === 'GET' && pathname === '/api/events') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-store',
+        Connection: 'keep-alive'
+      });
+      res.write(': connected\n\n');
+      eventClients.add(res);
+      req.on('close', () => {
+        eventClients.delete(res);
+      });
+      return;
+    }
+
     if (req.method === 'GET' && pathname === '/api/widgets') {
       const list = await widgets.list();
       const rows = await Promise.all([...list]
@@ -550,6 +630,8 @@ export function createLanServerController({ widgets, secrets, appFetch = default
           size: widget.size,
           summary: widget.summary,
           refreshTtlMs: widget.refreshTtlMs,
+          refreshMode: widget.refreshMode,
+          webhook: widget.webhook,
           state: await widgets.readWidgetHtml(widget.uuid) === null ? 'building' : 'live'
         })));
       json(res, 200, rows);
@@ -613,6 +695,40 @@ export function createLanServerController({ widgets, secrets, appFetch = default
       return;
     }
 
+    const webhookMatch = pathname.match(/^\/api\/widgets\/([^/]+)\/webhook\/([^/]+)$/);
+    if (req.method === 'POST' && webhookMatch) {
+      const uuid = decodeURIComponent(webhookMatch[1]);
+      const token = decodeURIComponent(webhookMatch[2]);
+      if (!await widgetExists(widgets, uuid)) {
+        notFound(res);
+        return;
+      }
+      const meta = await widgets.getMeta(uuid);
+      if (effectiveRefreshMode(meta) !== 'event' || !meta.webhook) {
+        json(res, 409, { error: 'Widget is not configured for event-driven webhooks.' });
+        return;
+      }
+      if (token !== meta.webhook.token) {
+        json(res, 403, { error: 'Invalid webhook token.' });
+        return;
+      }
+      let payload: any;
+      try {
+        payload = await readJson(req, true);
+      } catch (e: any) {
+        badRequest(res, e?.message ?? 'Request body must be valid JSON.');
+        return;
+      }
+      const receivedAt = new Date().toISOString();
+      await writeWebhookCacheEntry(widgets.dir(uuid), payload, receivedAt);
+      await widgets.markWebhookReceived(uuid, receivedAt);
+      const event = { uuid, receivedAt };
+      onWebhookEvent?.(event);
+      emitWebhookEvent(event);
+      json(res, 200, { ok: true, uuid, receivedAt });
+      return;
+    }
+
     const cacheMatch = pathname.match(/^\/api\/widgets\/([^/]+)\/cache\/([^/]+)$/);
     if (cacheMatch) {
       const uuid = decodeURIComponent(cacheMatch[1]);
@@ -625,7 +741,9 @@ export function createLanServerController({ widgets, secrets, appFetch = default
         const meta = await widgets.getMeta(uuid);
         const requestedTtlMs = parsedUrl.searchParams.has('ttlMs') ? Number(parsedUrl.searchParams.get('ttlMs')) : undefined;
         const ttlMs = effectiveRefreshTtlMs(meta.refreshTtlMs, requestedTtlMs);
-        const entry = await getCacheEntry(widgets.dir(uuid), key, ttlMs);
+        const entry = effectiveRefreshMode(meta) === 'event'
+          ? await getCacheEntryUnexpired(widgets.dir(uuid), key)
+          : await getCacheEntry(widgets.dir(uuid), key, ttlMs);
         json(res, 200, entry ? { hit: true, value: entry.value } : { hit: false });
         return;
       }
@@ -638,7 +756,9 @@ export function createLanServerController({ widgets, secrets, appFetch = default
           return;
         }
         const meta = await widgets.getMeta(uuid);
-        const ttlMs = effectiveRefreshTtlMs(meta.refreshTtlMs, payload?.ttlMs);
+        const ttlMs = effectiveRefreshMode(meta) === 'event'
+          ? DEFAULT_REFRESH_TTL_MS
+          : effectiveRefreshTtlMs(meta.refreshTtlMs, payload?.ttlMs);
         if (ttlMs <= 0) {
           json(res, 200, { ok: true });
           return;
@@ -657,6 +777,10 @@ export function createLanServerController({ widgets, secrets, appFetch = default
       resolve();
       return;
     }
+    for (const client of eventClients) {
+      client.end();
+    }
+    eventClients.clear();
     const current = server;
     server = null;
     current.close(() => resolve());

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { getCacheEntry, readCache, writeCacheEntry } from '../widget-cache-store';
+import { getCacheEntry, getCacheEntryUnexpired, readCache, writeCacheEntry, writeWebhookCacheEntry } from '../widget-cache-store';
 
 async function freshDir(): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), 'widget-cache-'));
@@ -57,5 +57,26 @@ describe('widget-cache-store', () => {
     expect(await readCache(dir)).toEqual({});
     await writeCacheEntry(dir, 'k', 'v', -1);
     expect(await readCache(dir)).toEqual({});
+  });
+
+  it('getCacheEntryUnexpired returns stale entries', async () => {
+    const dir = await freshDir();
+    await fs.writeFile(path.join(dir, 'cache.json'), JSON.stringify({
+      stale: { value: 'old', fetchedAt: Date.now() - 120_000, expiresAt: Date.now() - 1000 }
+    }));
+    expect(await getCacheEntry(dir, 'stale', 60_000)).toBeNull();
+    expect((await getCacheEntryUnexpired(dir, 'stale'))?.value).toBe('old');
+  });
+
+  it('writeWebhookCacheEntry writes the webhook cache shape', async () => {
+    const dir = await freshDir();
+    await writeWebhookCacheEntry(dir, { action: 'opened' }, '2026-06-04T09:00:00.000Z');
+    const entry = await getCacheEntryUnexpired(dir, 'webhook');
+    expect(entry?.value).toEqual({
+      receivedAt: '2026-06-04T09:00:00.000Z',
+      payload: { action: 'opened' }
+    });
+    expect(entry?.expiresAt).toBeUndefined();
+    expect(typeof entry?.fetchedAt).toBe('number');
   });
 });

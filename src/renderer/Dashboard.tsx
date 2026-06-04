@@ -6,7 +6,7 @@ import UpdatePrompt from './UpdatePrompt';
 import WelcomeOverlay from './WelcomeOverlay';
 import WidgetChatPanel from './WidgetChatPanel';
 import type { Widget, TileState } from './types';
-import type { UpdateState } from '../preload';
+import type { UpdateState, WidgetRefreshMode } from '../preload';
 import {
   SHUFFLE_INTERVAL_MS,
   calculateDashboardFillLayout,
@@ -27,7 +27,14 @@ interface TileEntry {
   size?: TileSize;
   selectedProviderIds?: string[];
   summary?: { sources: string[]; name?: string };
+  refreshMode?: WidgetRefreshMode;
   refreshTtlMs?: number;
+  webhook?: {
+    enabled: boolean;
+    cacheKey: 'webhook';
+    lastReceivedAt?: string;
+  };
+  webhookReceivedAt?: string;
 }
 
 const SIZE_CYCLE: Record<TileSize, TileSize> = {
@@ -39,7 +46,7 @@ const SIZE_CYCLE: Record<TileSize, TileSize> = {
 type ChatState =
   | { open: false }
   | { open: true; mode: 'create'; initialMessage?: string }
-  | { open: true; mode: 'edit'; widget: { uuid: string; prompt: string; htmlUrl?: string; selectedProviderIds?: string[]; refreshTtlMs?: number }; initialMessage?: string };
+  | { open: true; mode: 'edit'; widget: { uuid: string; prompt: string; htmlUrl?: string; selectedProviderIds?: string[]; refreshMode?: WidgetRefreshMode; refreshTtlMs?: number; webhook?: TileEntry['webhook'] }; initialMessage?: string };
 
 const CONTROLS_REVEAL_ZONE: React.CSSProperties = {
   position: 'fixed',
@@ -283,7 +290,10 @@ export default function Dashboard() {
         size: w.size,
         selectedProviderIds: w.selectedProviderIds,
         summary: w.summary,
-        refreshTtlMs: w.refreshTtlMs
+        refreshMode: w.refreshMode,
+        refreshTtlMs: w.refreshTtlMs,
+        webhook: w.webhook,
+        webhookReceivedAt: w.webhook?.lastReceivedAt
       })));
       setTiles(entries);
     })();
@@ -315,6 +325,22 @@ export default function Dashboard() {
     return () => { offReady(); offError(); };
   }, []);
 
+  useEffect(() => {
+    if (typeof window.api.onWidgetWebhook !== 'function') return;
+    return window.api.onWidgetWebhook((uuid, receivedAt) => {
+      setTiles((prev) => prev.map((tile) => {
+        if (tile.uuid !== uuid) return tile;
+        const busted = cacheBust(tile.htmlUrl);
+        return {
+          ...tile,
+          ...busted,
+          webhook: tile.webhook ? { ...tile.webhook, lastReceivedAt: receivedAt } : tile.webhook,
+          webhookReceivedAt: receivedAt
+        };
+      }));
+    });
+  }, []);
+
   const handleDelete = useCallback(async (uuid: string) => {
     await window.api.deleteWidget(uuid);
     setTiles((prev) => prev.filter((t) => t.uuid !== uuid));
@@ -344,8 +370,11 @@ export default function Dashboard() {
       htmlUrl: '',
       revision: 0,
       pinned: tile?.pinned === true,
-      selectedProviderIds: previousSelection,
-      refreshTtlMs: previousRefreshTtlMs
+        selectedProviderIds: previousSelection,
+      refreshTtlMs: previousRefreshTtlMs,
+      refreshMode: tile?.refreshMode,
+      webhook: tile?.webhook,
+      webhookReceivedAt: tile?.webhookReceivedAt
     }]);
   }, [tiles]);
 
@@ -358,18 +387,23 @@ export default function Dashboard() {
         prompt: tile.prompt,
         htmlUrl: tile.htmlUrl,
         selectedProviderIds: tile.selectedProviderIds,
-        refreshTtlMs: tile.refreshTtlMs
+        refreshMode: tile.refreshMode,
+        refreshTtlMs: tile.refreshTtlMs,
+        webhook: tile.webhook
       }
     });
   }, []);
 
-  const handleChatCreated = useCallback((uuid: string, prompt: string, selectedProviderIds: string[] | undefined, refreshTtlMs: number) => {
+  const handleChatCreated = useCallback((uuid: string, prompt: string, selectedProviderIds: string[] | undefined, refreshTtlMs: number, refreshMode?: WidgetRefreshMode, webhook?: TileEntry['webhook']) => {
     setTiles((prev) => [...prev, {
       uuid, prompt, state: { kind: 'building' }, htmlUrl: '', revision: 0, pinned: false,
       selectedProviderIds,
-      refreshTtlMs
+      refreshMode,
+      refreshTtlMs,
+      webhook,
+      webhookReceivedAt: webhook?.lastReceivedAt
     }]);
-    setChat({ open: true, mode: 'edit', widget: { uuid, prompt, selectedProviderIds, refreshTtlMs } });
+    setChat({ open: true, mode: 'edit', widget: { uuid, prompt, selectedProviderIds, refreshMode, refreshTtlMs, webhook } });
   }, []);
 
   const handleChatSent = useCallback((uuid: string, prompt: string) => {
@@ -377,10 +411,10 @@ export default function Dashboard() {
     setTiles((prev) => prev.map((t) => t.uuid === uuid ? { ...t, prompt } : t));
   }, []);
 
-  const handleRefreshChanged = useCallback((uuid: string, refreshTtlMs: number) => {
-    setTiles((prev) => prev.map((t) => t.uuid === uuid ? { ...t, refreshTtlMs } : t));
+  const handleRefreshChanged = useCallback((uuid: string, refreshTtlMs: number, refreshMode?: WidgetRefreshMode, webhook?: TileEntry['webhook']) => {
+    setTiles((prev) => prev.map((t) => t.uuid === uuid ? { ...t, refreshMode, refreshTtlMs, webhook, webhookReceivedAt: webhook?.lastReceivedAt } : t));
     setChat((current) => current.open && current.mode === 'edit' && current.widget.uuid === uuid
-      ? { ...current, widget: { ...current.widget, refreshTtlMs } }
+      ? { ...current, widget: { ...current.widget, refreshMode, refreshTtlMs, webhook } }
       : current
     );
   }, []);
@@ -518,7 +552,9 @@ export default function Dashboard() {
                 size={t.size}
                 geekMode={geekMode}
                 summary={t.summary}
+                refreshMode={t.refreshMode}
                 refreshTtlMs={t.refreshTtlMs}
+                webhookReceivedAt={t.webhookReceivedAt}
                 onRefresh={() => {}}
                 onDismiss={() => handleDelete(t.uuid)}
                 onEditChat={() => handleEditChat(t)}
