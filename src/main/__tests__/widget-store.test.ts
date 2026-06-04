@@ -181,6 +181,30 @@ describe('widget-store', () => {
     expect((await store.list())[0].summary).toBeUndefined();
   });
 
+  it('sets and clears input contracts without surfacing them in list()', async () => {
+    const root = await freshRoot();
+    const store = createWidgetStore(root);
+    const uuid = await store.create('p');
+
+    expect((await store.getMeta(uuid)).inputContract).toBeUndefined();
+
+    const contract = {
+      kind: 'webhook' as const,
+      description: 'Displays inbound events.',
+      fields: [
+        { path: 'subject', type: 'string', required: true, description: 'The message subject.' }
+      ],
+      examplePayload: { subject: 'New message' }
+    };
+    await store.setInputContract(uuid, contract);
+
+    expect((await store.getMeta(uuid)).inputContract).toEqual(contract);
+    expect(JSON.stringify((await store.list())[0])).not.toContain('inputContract');
+
+    await store.setInputContract(uuid, undefined);
+    expect((await store.getMeta(uuid)).inputContract).toBeUndefined();
+  });
+
   it('sets and clears selectedProviderIds, surfacing them in list()', async () => {
     const root = await freshRoot();
     const store = createWidgetStore(root);

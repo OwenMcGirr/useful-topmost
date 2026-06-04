@@ -561,7 +561,7 @@ describe('Dashboard', () => {
     await userEvent.type(screen.getByLabelText(/widget message/i), 'show weather');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
 
-    expect(m.api.chatStartWidget).toHaveBeenCalledWith('show weather', [], 3_600_000);
+    expect(m.api.chatStartWidget).toHaveBeenCalledWith('show weather', [], 3_600_000, 'timed');
     expect(await screen.findByText(/building widget/i)).toBeInTheDocument();
   });
 

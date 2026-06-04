@@ -120,6 +120,13 @@ describe('codex-prompt', () => {
     expect(CODEX_SYSTEM_PROMPT).toContain('The host app reloads the widget when a webhook event arrives.');
   });
 
+  it('instructs Codex to write an input-contract sidecar', () => {
+    expect(CODEX_SYSTEM_PROMPT).toContain('input-contract.json');
+    expect(CODEX_SYSTEM_PROMPT).toContain('"kind": "webhook"');
+    expect(CODEX_SYSTEM_PROMPT).toContain('"kind": "none"');
+    expect(CODEX_SYSTEM_PROMPT).toContain('The field paths are inside the webhook JSON body sent by the user');
+  });
+
   it('instructs Codex not to render widget refresh timestamps', () => {
     expect(CODEX_SYSTEM_PROMPT).toContain('Do not display app-refresh or generation timestamps inside the widget');
     expect(CODEX_SYSTEM_PROMPT).toContain('Updated at');
@@ -189,5 +196,21 @@ describe('codex-prompt', () => {
     expect(out).toContain('Available providers:');
     expect(out).toContain('OpenWeather');
     expect(out).toContain('window.appFetch');
+  });
+
+  it('buildChatPrompt includes event-driven runtime context only for event widgets', () => {
+    const eventPrompt = buildChatPrompt({
+      messages: [{ id: '1', role: 'user', text: 'show events', created_at: 't1' }],
+      refreshMode: 'event'
+    });
+    expect(eventPrompt).toContain('Runtime context:');
+    expect(eventPrompt).toContain('This widget is configured as event-driven.');
+    expect(eventPrompt).toContain('Record the exact expected JSON payload fields in input-contract.json.');
+
+    const timedPrompt = buildChatPrompt({
+      messages: [{ id: '1', role: 'user', text: 'show weather', created_at: 't1' }],
+      refreshMode: 'timed'
+    });
+    expect(timedPrompt).not.toContain('This widget is configured as event-driven.');
   });
 });

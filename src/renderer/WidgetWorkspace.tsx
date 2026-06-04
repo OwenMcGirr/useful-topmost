@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { WidgetChatMessage, WidgetRefreshMode, WidgetWebhookInfo } from '../preload';
+import type { WidgetChatMessage, WidgetQuestionTopic, WidgetRefreshMode, WidgetWebhookInfo } from '../preload';
 import type { PublicProvider } from '../main/secrets-store';
 import { categorizeError, stripFailedPrefix } from './errors';
 import './WidgetWorkspace.css';
@@ -422,6 +422,19 @@ export default function WidgetWorkspace({
     setWebhookTestStatus(terminalMessage(result.error));
   };
 
+  const answerQuestion = async (topic: WidgetQuestionTopic) => {
+    if (!currentUuid) return;
+    const result = await window.api.answerWidgetQuestion(currentUuid, topic);
+    if (result.ok) {
+      setMessages((prev) => [...prev, result.message]);
+      return;
+    }
+    setMessages((prev) => [
+      ...prev,
+      localMessage('assistant', terminalMessage(result.error))
+    ]);
+  };
+
   if (!open) return null;
 
   const send = async () => {
@@ -440,7 +453,7 @@ export default function WidgetWorkspace({
     try {
       if (!currentUuid) {
         const ids = Array.from(selectedIds);
-        const { uuid } = await window.api.chatStartWidget(trimmed, ids, refreshTtlMs);
+        const { uuid } = await window.api.chatStartWidget(trimmed, ids, refreshTtlMs, refreshMode);
         let createdWebhook: WidgetWebhookInfo | null = null;
         if (refreshMode === 'event') {
           const result = await window.api.setWidgetRefreshMode(uuid, 'event');
@@ -511,11 +524,40 @@ export default function WidgetWorkspace({
         );
       }
       return (
-        <div key={m.id} className={m.role === 'user' ? 'widget-message widget-message-user' : 'widget-message widget-message-status'}>
+        <div
+          key={m.id}
+          className={
+            m.role === 'user'
+              ? 'widget-message widget-message-user'
+              : m.role === 'assistant'
+                ? 'widget-message widget-message-assistant'
+                : 'widget-message widget-message-status'
+          }
+        >
           {m.text}
         </div>
       );
     });
+  };
+
+  const renderSuggestedQuestions = () => {
+    if (!currentUuid || refreshMode !== 'event' || submitting || building) return null;
+    const questions: Array<{ label: string; topic: WidgetQuestionTopic }> = [
+      { label: 'What should this widget receive?', topic: 'webhook-input' },
+      { label: 'How do I send an event?', topic: 'webhook-send' }
+    ];
+    if (webhookInfo && !webhookInfo.publicUrl) {
+      questions.push({ label: 'Why is this URL local only?', topic: 'webhook-local-url' });
+    }
+    return (
+      <div className="widget-workspace-suggested-questions" aria-label="Suggested questions">
+        {questions.map((question) => (
+          <button key={question.topic} style={{ ...BTN, fontSize: 11, padding: '4px 8px' }} onClick={() => void answerQuestion(question.topic)}>
+            {question.label}
+          </button>
+        ))}
+      </div>
+    );
   };
 
   const renderWebhookSetup = () => {
@@ -663,6 +705,7 @@ export default function WidgetWorkspace({
             </div>
 
             <div className="widget-workspace-composer">
+              {renderSuggestedQuestions()}
               <textarea
                 ref={textareaRef}
                 aria-label="Widget message"

@@ -24,6 +24,10 @@ function mockApi(opts: {
   const api = {
     chatStartWidget: vi.fn(async () => ({ uuid: 'new-widget' })),
     chatSendWidget: vi.fn(async () => ({ ok: true })),
+    answerWidgetQuestion: vi.fn(async () => ({
+      ok: true,
+      message: { id: 'assistant-1', role: 'assistant' as const, text: 'This widget expects a JSON POST.', created_at: 't2' }
+    })),
     listWidgetChat: vi.fn(async () => [
       { id: '1', role: 'user', text: 'make a clock', created_at: 't1' }
     ]),
@@ -194,7 +198,7 @@ describe('WidgetWorkspace', () => {
     await userEvent.type(screen.getByLabelText(/widget message/i), 'show weather');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
 
-    await waitFor(() => expect(api.chatStartWidget).toHaveBeenCalledWith('show weather', [], 3_600_000));
+    await waitFor(() => expect(api.chatStartWidget).toHaveBeenCalledWith('show weather', [], 3_600_000, 'timed'));
     expect(onCreated).toHaveBeenCalledWith('new-widget', 'show weather', [], 3_600_000);
     expect(screen.getByText(/building preview/i)).toBeInTheDocument();
   });
@@ -223,7 +227,7 @@ describe('WidgetWorkspace', () => {
     await userEvent.type(screen.getByLabelText(/widget message/i), 'show weather');
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
 
-    await waitFor(() => expect(api.chatStartWidget).toHaveBeenCalledWith('show weather', [], 3_600_000));
+    await waitFor(() => expect(api.chatStartWidget).toHaveBeenCalledWith('show weather', [], 3_600_000, 'timed'));
     expect(screen.getByText(/building preview/i)).toBeInTheDocument();
     expect(screen.queryByText(/closing in 3s/i)).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
@@ -379,7 +383,7 @@ describe('WidgetWorkspace', () => {
     await userEvent.type(screen.getByLabelText(/widget message/i), 'show time');
     await userEvent.keyboard('{Control>}{Enter}{/Control}');
 
-    await waitFor(() => expect(api.chatStartWidget).toHaveBeenCalledWith('show time', [], 3_600_000));
+    await waitFor(() => expect(api.chatStartWidget).toHaveBeenCalledWith('show time', [], 3_600_000, 'timed'));
   });
 
   it('provider section renders checkboxes and toggling persists via setWidgetProviders', async () => {
@@ -506,6 +510,74 @@ describe('WidgetWorkspace', () => {
     expect(screen.getByText('External services can send events to the public webhook URL.')).toBeInTheDocument();
     expect(screen.getByLabelText('Public webhook URL')).toHaveValue('https://hooks.example.com/api/widgets/u1/webhook/token');
     expect(screen.getByLabelText('Local webhook URL')).toHaveValue('http://localhost:32177/api/widgets/u1/webhook/token');
+  });
+
+  it('shows event-driven suggested questions and appends assistant answers without rebuilding', async () => {
+    const { api } = mockApi();
+    (window as any).api = api;
+    render(
+      <WidgetWorkspace
+        open={true}
+        mode="edit"
+        widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html', refreshMode: 'event' }}
+        widgetPreloadUrl=""
+        onClose={() => {}}
+        onCreated={() => {}}
+        onSent={() => {}}
+        onDeleted={() => {}}
+      />
+    );
+
+    expect(await screen.findByLabelText('Suggested questions')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'What should this widget receive?' }));
+
+    await waitFor(() => expect(api.answerWidgetQuestion).toHaveBeenCalledWith('u1', 'webhook-input'));
+    expect(api.chatSendWidget).not.toHaveBeenCalled();
+    const answer = await screen.findByText('This widget expects a JSON POST.');
+    expect(answer).toHaveClass('widget-message-assistant');
+  });
+
+  it('does not show webhook suggested questions for timed widgets', async () => {
+    const { api } = mockApi();
+    (window as any).api = api;
+    render(
+      <WidgetWorkspace
+        open={true}
+        mode="edit"
+        widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html', refreshMode: 'timed', refreshTtlMs: 3_600_000 }}
+        widgetPreloadUrl=""
+        onClose={() => {}}
+        onCreated={() => {}}
+        onSent={() => {}}
+        onDeleted={() => {}}
+      />
+    );
+
+    await screen.findByText(/make a clock/i);
+    expect(screen.queryByLabelText('Suggested questions')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'What should this widget receive?' })).toBeNull();
+  });
+
+  it('shows a terminal assistant fallback when a suggested answer fails', async () => {
+    const { api } = mockApi();
+    api.answerWidgetQuestion.mockResolvedValueOnce({ ok: false, error: 'this question is only available for event-driven widgets' });
+    (window as any).api = api;
+    render(
+      <WidgetWorkspace
+        open={true}
+        mode="edit"
+        widget={{ uuid: 'u1', prompt: 'p', htmlUrl: 'file:///u1/index.html', refreshMode: 'event' }}
+        widgetPreloadUrl=""
+        onClose={() => {}}
+        onCreated={() => {}}
+        onSent={() => {}}
+        onDeleted={() => {}}
+      />
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: 'How do I send an event?' }));
+
+    expect(await screen.findByText('this question is only available for event-driven widgets.')).toHaveClass('widget-message-assistant');
   });
 
   it('copies public and local webhook URLs separately', async () => {

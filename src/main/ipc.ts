@@ -2,14 +2,14 @@ import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type { IpcMain, WebContents } from 'electron';
-import { effectiveRefreshMode, type WidgetRefreshMode, type WidgetStore, type WidgetSummary } from './widget-store';
+import { effectiveRefreshMode, type WidgetChatMessage, type WidgetInputContract, type WidgetMeta, type WidgetRefreshMode, type WidgetStore, type WidgetSummary } from './widget-store';
 import type { SecretsStore, Provider } from './secrets-store';
 import type { OnboardingStore } from './onboarding-store';
 import { normalizeWebhookPublicBaseUrl, type PrefsStore, type UpdateChannel } from './prefs-store';
 import type { LanServerController } from './lan-server';
 import type { StartupController, StartupState } from './startup';
 import type { runCodex as RunCodexFn } from './codex-runner';
-import { DEFAULT_REFRESH_TTL_MS, PROVIDER_LOOKUP_OUTPUT_FILE, WIDGET_PLAN_OUTPUT_FILE, WIDGET_SUMMARY_OUTPUT_FILE, buildChatPrompt, buildPrompt, buildProviderLookupPrompt } from './codex-prompt';
+import { DEFAULT_REFRESH_TTL_MS, PROVIDER_LOOKUP_OUTPUT_FILE, WIDGET_INPUT_CONTRACT_OUTPUT_FILE, WIDGET_PLAN_OUTPUT_FILE, WIDGET_SUMMARY_OUTPUT_FILE, buildChatPrompt, buildPrompt, buildProviderLookupPrompt } from './codex-prompt';
 import { appFetch, filterProviders, injectAuth } from './proxy';
 import { runLocalExec, widgetCwdFromSenderUrl } from './local-exec';
 import { getCacheEntry, getCacheEntryUnexpired, writeCacheEntry } from './widget-cache-store';
@@ -73,6 +73,11 @@ interface WidgetWebhookInfo {
   cacheKey: 'webhook';
   lastReceivedAt?: string;
 }
+
+export type WidgetQuestionTopic =
+  | 'webhook-input'
+  | 'webhook-send'
+  | 'webhook-local-url';
 
 export interface ProviderLookupResultOk {
   ok: true;
@@ -167,7 +172,7 @@ export function parseProviderLookupResponse(raw: string): ProviderLookupResult {
   };
 }
 
-function chatMessage(role: 'user' | 'status', text: string, status?: 'building' | 'updated' | 'failed') {
+function chatMessage(role: 'user' | 'status' | 'assistant', text: string, status?: 'building' | 'updated' | 'failed'): WidgetChatMessage {
   return {
     id: randomUUID(),
     role,
@@ -206,11 +211,106 @@ async function readWidgetSummary(dir: string): Promise<WidgetSummary | undefined
   }
 }
 
+function cleanString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim().replace(/\s+/g, ' ') : undefined;
+}
+
+function normalizeInputContract(parsed: any): WidgetInputContract | undefined {
+  if (!parsed || typeof parsed !== 'object') return undefined;
+  if (parsed.kind === 'none') {
+    const reason = cleanString(parsed.reason);
+    return { kind: 'none', ...(reason ? { reason } : {}) };
+  }
+  if (parsed.kind !== 'webhook' || !Array.isArray(parsed.fields)) return undefined;
+  const fields = parsed.fields
+    .slice(0, 20)
+    .map((field: any) => {
+      if (!field || typeof field !== 'object') return null;
+      const pathValue = cleanString(field.path);
+      if (!pathValue) return null;
+      return {
+        path: pathValue,
+        type: cleanString(field.type) ?? 'unknown',
+        required: field.required === true,
+        description: cleanString(field.description) ?? ''
+      };
+    })
+    .filter((field: any): field is NonNullable<typeof field> => field !== null);
+  const description = cleanString(parsed.description);
+  const notes = Array.isArray(parsed.notes)
+    ? parsed.notes.map(cleanString).filter((note: string | undefined): note is string => note !== undefined).slice(0, 10)
+    : undefined;
+  return {
+    kind: 'webhook',
+    ...(description ? { description } : {}),
+    fields,
+    ...(Object.prototype.hasOwnProperty.call(parsed, 'examplePayload') ? { examplePayload: parsed.examplePayload } : {}),
+    ...(notes && notes.length > 0 ? { notes } : {})
+  };
+}
+
+export async function readWidgetInputContract(dir: string): Promise<WidgetInputContract | undefined> {
+  try {
+    const raw = await fs.readFile(path.join(dir, WIDGET_INPUT_CONTRACT_OUTPUT_FILE), 'utf8');
+    return normalizeInputContract(JSON.parse(raw));
+  } catch {
+    return undefined;
+  }
+}
+
 function formatSourceList(sources: string[]): string {
   const cleaned = sources.map((source) => source.trim()).filter(Boolean).slice(0, 3);
   if (cleaned.length === 1) return cleaned[0];
   if (cleaned.length === 2) return `${cleaned[0]} and ${cleaned[1]}`;
   return `${cleaned[0]}, ${cleaned[1]}, and ${cleaned[2]}`;
+}
+
+function formatJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return '{}';
+  }
+}
+
+export function widgetQuestionAnswer(opts: {
+  topic: WidgetQuestionTopic;
+  meta: WidgetMeta;
+  webhookInfo?: WidgetWebhookInfo;
+}): string {
+  if (opts.topic === 'webhook-send') {
+    if (opts.webhookInfo?.publicUrl) {
+      return 'Send a POST request to the public webhook URL with a JSON body and Content-Type: application/json. The app saves the latest event and reloads this widget after the request succeeds.';
+    }
+    return 'Send a POST request to the local webhook URL with a JSON body and Content-Type: application/json. This works from your machine or local network. External services need a public HTTPS base URL configured in Settings.';
+  }
+
+  if (opts.topic === 'webhook-local-url') {
+    return 'The local webhook URL uses your machine or LAN address, so outside services usually cannot reach it. To receive events from the public internet, configure a public HTTPS base URL in Settings from your own tunnel, reverse proxy, or hosting setup.';
+  }
+
+  const contract = opts.meta.inputContract;
+  if (!contract || contract.kind !== 'webhook') {
+    return 'This widget accepts any valid JSON POST to its webhook URL. I do not have a recorded field list for this widget yet, so send the fields the widget is meant to display. The app stores the latest event and reloads the widget after it arrives.';
+  }
+
+  const fieldLines = contract.fields.length > 0
+    ? contract.fields.map((field) =>
+        `- ${field.path}: ${field.type}, ${field.required ? 'required' : 'optional'}. ${field.description || 'No description recorded.'}`
+      ).join('\n')
+    : '- Any fields this widget was designed to display. No specific fields were recorded.';
+  const example = Object.prototype.hasOwnProperty.call(contract, 'examplePayload')
+    ? contract.examplePayload
+    : {};
+  return [
+    'This widget expects a JSON POST to its webhook URL. It reads these fields from the event payload:',
+    '',
+    fieldLines,
+    '',
+    'Example JSON body:',
+    '',
+    formatJson(example)
+  ].join('\n');
 }
 
 export function completionSummaryText(summary: WidgetSummary | undefined): string {
@@ -370,6 +470,9 @@ export function registerIpc(
     }
   };
 
+  const validQuestionTopic = (value: unknown): value is WidgetQuestionTopic =>
+    value === 'webhook-input' || value === 'webhook-send' || value === 'webhook-local-url';
+
   const trackRun = (uuid: string): AbortController => {
     const controller = new AbortController();
     inflight.set(uuid, controller);
@@ -408,6 +511,8 @@ export function registerIpc(
       if (result.ok) {
         const summary = await readWidgetSummary(widgets.dir(uuid));
         if (summary) await widgets.setSummary(uuid, summary);
+        const inputContract = await readWidgetInputContract(widgets.dir(uuid));
+        if (inputContract) await widgets.setInputContract(uuid, inputContract);
         sender.send('widget:ready', { uuid });
       } else {
         sender.send('widget:error', { uuid, error: result.error ?? 'unknown' });
@@ -416,7 +521,7 @@ export function registerIpc(
     return { uuid };
   });
 
-  ipcMain.handle('widget:chatStart', async (_event, message: string, selectedProviderIds?: string[], refreshTtlMs?: number) => {
+  ipcMain.handle('widget:chatStart', async (_event, message: string, selectedProviderIds?: string[], refreshTtlMs?: number, refreshMode?: WidgetRefreshMode) => {
     const trimmed = typeof message === 'string' ? message.trim() : '';
     if (!trimmed) throw new Error('message is required');
 
@@ -424,7 +529,11 @@ export function registerIpc(
     if (Array.isArray(selectedProviderIds)) {
       await widgets.setProviders(uuid, selectedProviderIds);
     }
-    if (typeof refreshTtlMs === 'number' && Number.isFinite(refreshTtlMs) && refreshTtlMs >= 0) {
+    if (validRefreshMode(refreshMode)) {
+      if (refreshMode === 'event') await widgets.setRefreshMode(uuid, 'event', refreshTtlMs);
+      else if (refreshMode === 'live') await widgets.setRefreshTtl(uuid, 0);
+      else if (typeof refreshTtlMs === 'number' && Number.isFinite(refreshTtlMs) && refreshTtlMs >= 0) await widgets.setRefreshTtl(uuid, refreshTtlMs);
+    } else if (typeof refreshTtlMs === 'number' && Number.isFinite(refreshTtlMs) && refreshTtlMs >= 0) {
       await widgets.setRefreshTtl(uuid, refreshTtlMs);
     }
     await widgets.appendChatMessage(uuid, chatMessage('user', trimmed));
@@ -443,7 +552,7 @@ export function registerIpc(
       const meta = await widgets.getMeta(uuid);
       const providers = filterProviders(await secrets.list(), meta.selectedProviderIds);
       const result = await runCodex({
-        prompt: buildChatPrompt({ messages: meta.chat ?? [], providers }),
+        prompt: buildChatPrompt({ messages: meta.chat ?? [], providers, refreshMode: effectiveRefreshMode(meta) }),
         cwd: widgets.dir(uuid),
         logPath: widgets.logPath(uuid),
         signal: controller.signal
@@ -452,6 +561,8 @@ export function registerIpc(
       if (result.ok) {
         const summary = await readWidgetSummary(widgets.dir(uuid));
         if (summary) await widgets.setSummary(uuid, summary);
+        const inputContract = await readWidgetInputContract(widgets.dir(uuid));
+        if (inputContract) await widgets.setInputContract(uuid, inputContract);
         await widgets.replaceChatMessage(uuid, status.id, {
           ...status,
           text: completionSummaryText(summary),
@@ -498,7 +609,7 @@ export function registerIpc(
         const providers = filterProviders(await secrets.list(), meta.selectedProviderIds);
         const currentHtml = await widgets.readWidgetHtml(uuid);
         const result = await runCodex({
-          prompt: buildChatPrompt({ messages: meta.chat ?? [], currentHtml, providers }),
+          prompt: buildChatPrompt({ messages: meta.chat ?? [], currentHtml, providers, refreshMode: effectiveRefreshMode(meta) }),
           cwd: stagingDir,
           logPath: path.join(stagingDir, 'codex.log'),
           signal: controller.signal
@@ -510,6 +621,8 @@ export function registerIpc(
           await widgets.updatePrompt(uuid, trimmed);
           const summary = await readWidgetSummary(stagingDir);
           if (summary) await widgets.setSummary(uuid, summary);
+          const inputContract = await readWidgetInputContract(stagingDir);
+          if (inputContract) await widgets.setInputContract(uuid, inputContract);
           await widgets.replaceChatMessage(uuid, status.id, {
             ...status,
             text: completionSummaryText(summary),
@@ -543,6 +656,28 @@ export function registerIpc(
     })();
 
     return { ok: true };
+  });
+
+  ipcMain.handle('widget:answerQuestion', async (_event, uuid: string, topic: WidgetQuestionTopic): Promise<{ ok: true; message: WidgetChatMessage } | { ok: false; error: string }> => {
+    if (!validQuestionTopic(topic)) return { ok: false as const, error: 'question topic is not supported' };
+    let meta: WidgetMeta;
+    try {
+      meta = await widgets.getMeta(uuid);
+    } catch {
+      return { ok: false as const, error: 'widget not found' };
+    }
+    if (topic.startsWith('webhook-') && effectiveRefreshMode(meta) !== 'event') {
+      return { ok: false as const, error: 'this question is only available for event-driven widgets' };
+    }
+    const webhookInfo = topic.startsWith('webhook-') ? await getWidgetWebhookInfo(uuid) : undefined;
+    const text = widgetQuestionAnswer({
+      topic,
+      meta,
+      webhookInfo: webhookInfo && !('ok' in webhookInfo) ? webhookInfo : undefined
+    });
+    const message = chatMessage('assistant', text);
+    await widgets.appendChatMessage(uuid, message);
+    return { ok: true as const, message };
   });
 
   ipcMain.handle('widget:cancel', async (_event, uuid: string) => {
