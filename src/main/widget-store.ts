@@ -19,6 +19,30 @@ export interface WidgetSummary {
   conclusion?: string;
 }
 
+export interface WidgetInputContractField {
+  path: string;
+  type: string;
+  required: boolean;
+  description: string;
+}
+
+export interface WidgetWebhookInputContract {
+  kind: 'webhook';
+  description?: string;
+  fields: WidgetInputContractField[];
+  examplePayload?: unknown;
+  notes?: string[];
+}
+
+export interface WidgetNoInputContract {
+  kind: 'none';
+  reason?: string;
+}
+
+export type WidgetInputContract =
+  | WidgetWebhookInputContract
+  | WidgetNoInputContract;
+
 export interface WidgetMeta {
   prompt: string;
   created_at: string;
@@ -36,6 +60,11 @@ export interface WidgetMeta {
    * Surfaced in the geek-mode tile popover.
    */
   summary?: WidgetSummary;
+  /**
+   * Host-owned record of what input payload a generated widget expects.
+   * Used for workspace help, not surfaced in widget:list.
+   */
+  inputContract?: WidgetInputContract;
   /**
    * Refresh cadence in milliseconds. The app runtime applies this to widget
    * cache reads. Undefined falls back to generated-code TTLs for BC.
@@ -63,7 +92,7 @@ export interface Widget {
   };
 }
 
-export type WidgetChatRole = 'user' | 'status';
+export type WidgetChatRole = 'user' | 'status' | 'assistant';
 
 export interface WidgetChatMessage {
   id: string;
@@ -89,6 +118,7 @@ export interface WidgetStore {
   setSize(uuid: string, size: WidgetSize): Promise<void>;
   setProviders(uuid: string, providerIds: string[] | undefined): Promise<void>;
   setSummary(uuid: string, summary: WidgetSummary | undefined): Promise<void>;
+  setInputContract(uuid: string, contract: WidgetInputContract | undefined): Promise<void>;
   setRefreshTtl(uuid: string, ttlMs: number | undefined): Promise<void>;
   setRefreshMode(uuid: string, mode: WidgetRefreshMode, ttlMs?: number): Promise<void>;
   ensureWebhook(uuid: string): Promise<WidgetWebhookConfig>;
@@ -253,6 +283,14 @@ export function createWidgetStore(root: string): WidgetStore {
       const next = { ...meta };
       if (summary === undefined) delete next.summary;
       else next.summary = summary;
+      await writeMeta(uuid, next);
+    },
+
+    async setInputContract(uuid, contract) {
+      const meta = await readMeta(uuid);
+      const next = { ...meta };
+      if (contract === undefined) delete next.inputContract;
+      else next.inputContract = contract;
       await writeMeta(uuid, next);
     },
 

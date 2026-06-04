@@ -7,7 +7,7 @@ import { createWidgetStore } from '../widget-store';
 import { createSecretsStore } from '../secrets-store';
 import { createOnboardingStore } from '../onboarding-store';
 import { createPrefsStore } from '../prefs-store';
-import { completionSummaryText, parseProviderLookupResponse, registerIpc } from '../ipc';
+import { completionSummaryText, parseProviderLookupResponse, readWidgetInputContract, registerIpc, widgetQuestionAnswer } from '../ipc';
 
 function fakeIpcMain() {
   const handlers = new Map<string, (...args: any[]) => any>();
@@ -82,6 +82,76 @@ describe('ipc', () => {
     expect(completionSummaryText({ name: 'Weather', sources: [' Open-Meteo ', '', ' RainViewer '] })).toBe(
       'Weather is ready. Data from Open-Meteo and RainViewer.'
     );
+  });
+
+  it('reads valid input-contract sidecars and ignores malformed files', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-contract-'));
+    await fs.writeFile(path.join(root, 'input-contract.json'), JSON.stringify({
+      kind: 'webhook',
+      description: ' Displays inbound events. ',
+      fields: [
+        { path: ' subject ', type: ' string ', required: true, description: ' The message subject. ' },
+        { path: ' ', type: 'string', required: true, description: 'ignored' }
+      ],
+      examplePayload: { subject: 'New message' },
+      notes: [' Additional fields are ignored. ']
+    }));
+
+    expect(await readWidgetInputContract(root)).toEqual({
+      kind: 'webhook',
+      description: 'Displays inbound events.',
+      fields: [
+        { path: 'subject', type: 'string', required: true, description: 'The message subject.' }
+      ],
+      examplePayload: { subject: 'New message' },
+      notes: ['Additional fields are ignored.']
+    });
+
+    await fs.writeFile(path.join(root, 'input-contract.json'), JSON.stringify({
+      kind: 'none',
+      reason: ' This widget does not read webhook event payloads. '
+    }));
+    expect(await readWidgetInputContract(root)).toEqual({
+      kind: 'none',
+      reason: 'This widget does not read webhook event payloads.'
+    });
+
+    await fs.writeFile(path.join(root, 'input-contract.json'), 'not json');
+    expect(await readWidgetInputContract(root)).toBeUndefined();
+  });
+
+  it('formats widget question answers from input contracts and webhook URL state', () => {
+    const meta = {
+      prompt: 'p',
+      created_at: 't',
+      refreshMode: 'event' as const,
+      inputContract: {
+        kind: 'webhook' as const,
+        fields: [
+          { path: 'subject', type: 'string', required: true, description: 'The message subject.' },
+          { path: 'from', type: 'string', required: false, description: 'The sender address.' }
+        ],
+        examplePayload: { subject: 'New message', from: 'person@example.com' }
+      }
+    };
+
+    expect(widgetQuestionAnswer({ topic: 'webhook-input', meta })).toContain('- subject: string, required. The message subject.');
+    expect(widgetQuestionAnswer({ topic: 'webhook-input', meta })).toContain('"from": "person@example.com"');
+    expect(widgetQuestionAnswer({ topic: 'webhook-input', meta: { prompt: 'p', created_at: 't', refreshMode: 'event' } })).toContain('I do not have a recorded field list');
+    expect(widgetQuestionAnswer({
+      topic: 'webhook-send',
+      meta,
+      webhookInfo: {
+        enabled: true,
+        path: '/api/widgets/u/webhook/t',
+        urlCandidates: ['https://hooks.example.com/api/widgets/u/webhook/t'],
+        localUrlCandidates: ['http://localhost:32177/api/widgets/u/webhook/t'],
+        publicUrl: 'https://hooks.example.com/api/widgets/u/webhook/t',
+        publicBaseUrl: 'https://hooks.example.com',
+        cacheKey: 'webhook'
+      }
+    })).toContain('public webhook URL');
+    expect(widgetQuestionAnswer({ topic: 'webhook-send', meta })).toContain('local webhook URL');
   });
 
   it('widget:create creates a widget, runs codex, and sends widget:ready on success', async () => {
@@ -215,6 +285,11 @@ describe('ipc', () => {
         conclusion: 'Built a local weather view with current conditions.',
         sources: ['Open-Meteo']
       }));
+      await fs.writeFile(path.join(cwd, 'input-contract.json'), JSON.stringify({
+        kind: 'webhook',
+        fields: [{ path: 'subject', type: 'string', required: true, description: 'The message subject.' }],
+        examplePayload: { subject: 'New message' }
+      }));
       return { ok: true };
     });
 
@@ -223,10 +298,16 @@ describe('ipc', () => {
     const { uuid } = await ipc.invoke('widget:create', 'show weather');
     await waitForSent(sender, { channel: 'widget:ready', payload: { uuid } });
 
-    expect((await store.getMeta(uuid)).summary).toEqual({
+    const meta = await store.getMeta(uuid);
+    expect(meta.summary).toEqual({
       name: 'Local Weather',
       conclusion: 'Built a local weather view with current conditions.',
       sources: ['Open-Meteo']
+    });
+    expect(meta.inputContract).toEqual({
+      kind: 'webhook',
+      fields: [{ path: 'subject', type: 'string', required: true, description: 'The message subject.' }],
+      examplePayload: { subject: 'New message' }
     });
   });
 
@@ -615,6 +696,62 @@ describe('ipc', () => {
     expect(unavailable).toEqual({ ok: false, error: 'Local network server is off' });
   });
 
+  it('widget:answerQuestion validates topics and appends assistant replies for event widgets', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    expect(await ipc.invoke('widget:answerQuestion', 'missing', 'webhook-input')).toEqual({ ok: false, error: 'widget not found' });
+
+    const uuid = await store.create('p');
+    expect(await ipc.invoke('widget:answerQuestion', uuid, 'other')).toEqual({ ok: false, error: 'question topic is not supported' });
+    expect(await ipc.invoke('widget:answerQuestion', uuid, 'webhook-input')).toEqual({
+      ok: false,
+      error: 'this question is only available for event-driven widgets'
+    });
+
+    await store.setRefreshMode(uuid, 'event');
+    await store.setInputContract(uuid, {
+      kind: 'webhook',
+      fields: [
+        { path: 'subject', type: 'string', required: true, description: 'The message subject.' }
+      ],
+      examplePayload: { subject: 'New message' }
+    });
+    const result = await ipc.invoke('widget:answerQuestion', uuid, 'webhook-input');
+
+    expect(result.ok).toBe(true);
+    expect(result.message.role).toBe('assistant');
+    expect(result.message.text).toContain('- subject: string, required. The message subject.');
+    expect((await store.getMeta(uuid)).chat?.at(-1)).toEqual(result.message);
+  });
+
+  it('widget:answerQuestion explains public webhook sending when a public base URL is configured', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+    const runCodex = vi.fn();
+    const prefs = createPrefsStore(root);
+    await prefs.setWebhookPublicBaseUrl('https://hooks.example.com');
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, prefs);
+    const uuid = await store.create('p');
+    await store.setRefreshMode(uuid, 'event');
+
+    const result = await ipc.invoke('widget:answerQuestion', uuid, 'webhook-send');
+
+    expect(result.ok).toBe(true);
+    expect(result.message.text).toContain('public webhook URL');
+    expect(result.message.text).not.toMatch(/Zapier|GitHub|Stripe|Make|IFTTT/);
+  });
+
   it('widget:create with refreshTtlMs persists it without adding a cadence directive to the prompt', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
     const store = createWidgetStore(root);
@@ -663,6 +800,32 @@ describe('ipc', () => {
     expect(capturedPrompt).not.toContain('Refresh cadence:');
     expect(capturedPrompt).not.toContain('Honor this exact value');
     expect(capturedPrompt).not.toContain('use ttlMs =');
+  });
+
+  it('widget:chatStart with event refresh mode configures event metadata before prompting Codex', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ipc-'));
+    const store = createWidgetStore(root);
+    const secrets = createSecretsStore(root);
+    const ipc = fakeIpcMain();
+    const sender = fakeSender();
+
+    let capturedPrompt = '';
+    const runCodex = vi.fn(async ({ cwd, prompt }: any) => {
+      capturedPrompt = prompt;
+      await fs.writeFile(path.join(cwd, 'index.html'), '<html></html>');
+      return { ok: true };
+    });
+
+    registerIpc(ipc as any, store, secrets, createOnboardingStore(root), runCodex as any, () => sender as any, createPrefsStore(root));
+
+    const { uuid } = await ipc.invoke('widget:chatStart', 'show webhook events', undefined, 3_600_000, 'event');
+    await new Promise((r) => setTimeout(r, 20));
+
+    const meta = await store.getMeta(uuid);
+    expect(meta.refreshMode).toBe('event');
+    expect(meta.webhook?.cacheKey).toBe('webhook');
+    expect(capturedPrompt).toContain('This widget is configured as event-driven.');
+    expect(capturedPrompt).toContain('Record the exact expected JSON payload fields in input-contract.json.');
   });
 
   it('widget:chatSend reads persisted refreshTtlMs without adding it to the prompt', async () => {
@@ -1187,6 +1350,11 @@ describe('ipc', () => {
         conclusion: 'Built a local weather view with current conditions.',
         sources: ['Open-Meteo']
       }));
+      await fs.writeFile(path.join(cwd, 'input-contract.json'), JSON.stringify({
+        kind: 'webhook',
+        fields: [{ path: 'subject', type: 'string', required: true, description: 'The message subject.' }],
+        examplePayload: { subject: 'New message' }
+      }));
       return { ok: true, path: path.join(cwd, 'index.html') };
     });
 
@@ -1197,6 +1365,11 @@ describe('ipc', () => {
 
     const meta = await store.getMeta(uuid);
     expect(meta.chat?.map((m) => m.text)).toEqual(['show weather', 'Built a local weather view with current conditions.']);
+    expect(meta.inputContract).toEqual({
+      kind: 'webhook',
+      fields: [{ path: 'subject', type: 'string', required: true, description: 'The message subject.' }],
+      examplePayload: { subject: 'New message' }
+    });
     expect(sender.sent).toContainEqual({ channel: 'widget:ready', payload: { uuid } });
   });
 
@@ -1263,6 +1436,13 @@ describe('ipc', () => {
           sources: ['Open-Meteo', 'RainViewer']
         })
       );
+      await fs.writeFile(
+        path.join(cwd, 'input-contract.json'),
+        JSON.stringify({
+          kind: 'none',
+          reason: 'This widget does not read webhook event payloads.'
+        })
+      );
       return { ok: true, path: path.join(cwd, 'index.html') };
     });
 
@@ -1274,6 +1454,10 @@ describe('ipc', () => {
     expect(await store.readWidgetHtml(uuid)).toBe('<html>new</html>');
     const meta = await store.getMeta(uuid);
     expect(meta.prompt).toBe('make it blue');
+    expect(meta.inputContract).toEqual({
+      kind: 'none',
+      reason: 'This widget does not read webhook event payloads.'
+    });
     expect(meta.chat?.map((m) => m.text)).toEqual([
       'make a clock',
       'make it blue',

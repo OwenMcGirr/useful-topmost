@@ -41,7 +41,12 @@ export interface WidgetWebhookInfo {
   lastReceivedAt?: string;
 }
 
-export type WidgetChatRole = 'user' | 'status';
+export type WidgetChatRole = 'user' | 'status' | 'assistant';
+
+export type WidgetQuestionTopic =
+  | 'webhook-input'
+  | 'webhook-send'
+  | 'webhook-local-url';
 
 export interface WidgetChatMessage {
   id: string;
@@ -82,10 +87,12 @@ export type LookupProviderResult =
 const api = {
   createWidget: (prompt: string, selectedProviderIds?: string[], refreshTtlMs?: number) =>
     ipcRenderer.invoke('widget:create', prompt, selectedProviderIds, refreshTtlMs) as Promise<{ uuid: string }>,
-  chatStartWidget: (message: string, selectedProviderIds?: string[], refreshTtlMs?: number) =>
-    ipcRenderer.invoke('widget:chatStart', message, selectedProviderIds, refreshTtlMs) as Promise<{ uuid: string }>,
+  chatStartWidget: (message: string, selectedProviderIds?: string[], refreshTtlMs?: number, refreshMode?: WidgetRefreshMode) =>
+    ipcRenderer.invoke('widget:chatStart', message, selectedProviderIds, refreshTtlMs, refreshMode) as Promise<{ uuid: string }>,
   chatSendWidget: (uuid: string, message: string) =>
     ipcRenderer.invoke('widget:chatSend', uuid, message) as Promise<ChatResult>,
+  answerWidgetQuestion: (uuid: string, topic: WidgetQuestionTopic) =>
+    ipcRenderer.invoke('widget:answerQuestion', uuid, topic) as Promise<{ ok: true; message: WidgetChatMessage } | { ok: false; error: string }>,
   listWidgetChat: (uuid: string) =>
     ipcRenderer.invoke('widget:chatList', uuid) as Promise<WidgetChatMessage[]>,
   deleteWidget: (uuid: string) => ipcRenderer.invoke('widget:delete', uuid) as Promise<{ ok: true }>,

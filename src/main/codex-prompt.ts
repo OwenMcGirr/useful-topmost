@@ -1,4 +1,4 @@
-import type { WidgetChatMessage } from './widget-store';
+import type { WidgetChatMessage, WidgetRefreshMode } from './widget-store';
 
 export const CODEX_SYSTEM_PROMPT = `You are generating a single self-contained HTML widget that will be displayed inside a resizable dashboard tile. The tile can be as small as 320x240 px and can grow into wider, taller, near-square, or large dashboard regions.
 
@@ -103,10 +103,32 @@ Summary record:
 - "sources" lists each data source the widget actually uses by short friendly name — e.g. "Open-Meteo", "Hacker News API", "Wikipedia REST", "GitHub REST API". Do NOT put URLs in sources. For a self-contained widget that fetches nothing (clock, countdown, static text), use an empty array.
 - summary.json is plain JSON only — no Markdown fences, no surrounding prose.
 
+Input contract record:
+- After writing index.html, also write input-contract.json to the same directory.
+- If the widget reads event-driven webhook data from window.cache.get("webhook", async () => null), write:
+  {
+    "kind": "webhook",
+    "description": "<one sentence explaining what event this widget expects>",
+    "fields": [
+      {
+        "path": "<field path inside payload, such as subject or user.email>",
+        "type": "<string|number|boolean|object|array|unknown>",
+        "required": true,
+        "description": "<short user-facing description>"
+      }
+    ],
+    "examplePayload": {}
+  }
+- The field paths are inside the webhook JSON body sent by the user, not inside the host wrapper.
+- If the widget does not use webhook event data, write:
+  { "kind": "none", "reason": "This widget does not read webhook event payloads." }
+- input-contract.json is plain JSON only. No Markdown fences, no surrounding prose.
+
 `;
 
 export const WIDGET_SUMMARY_OUTPUT_FILE = 'summary.json';
 export const WIDGET_PLAN_OUTPUT_FILE = 'plan.json';
+export const WIDGET_INPUT_CONTRACT_OUTPUT_FILE = 'input-contract.json';
 
 export interface PublicProviderForPrompt {
   name: string;
@@ -136,6 +158,7 @@ export interface BuildChatPromptOptions {
   currentHtml?: string | null;
   providers?: PublicProviderForPrompt[];
   refreshTtlMs?: number;
+  refreshMode?: WidgetRefreshMode;
 }
 
 export interface RefreshPreset {
@@ -160,13 +183,25 @@ export function labelForTtl(ttlMs: number): string {
   return preset ? preset.label : `${ttlMs} ms`;
 }
 
+function runtimeContextBlock(refreshMode?: WidgetRefreshMode): string {
+  if (refreshMode !== 'event') return '';
+  return [
+    'Runtime context:',
+    '- This widget is configured as event-driven.',
+    '- It should read webhook data from window.cache.get("webhook", async () => null).',
+    '- Record the exact expected JSON payload fields in input-contract.json.',
+    ''
+  ].join('\n');
+}
+
 export function buildPrompt(
   userPrompt: string,
   providers: PublicProviderForPrompt[] = [],
-  refreshTtlMs?: number
+  refreshTtlMs?: number,
+  refreshMode?: WidgetRefreshMode
 ): string {
   void refreshTtlMs;
-  return CODEX_SYSTEM_PROMPT + providersBlock(providers) + "The user's request:\n" + userPrompt;
+  return CODEX_SYSTEM_PROMPT + providersBlock(providers) + runtimeContextBlock(refreshMode) + "The user's request:\n" + userPrompt;
 }
 
 export const PROVIDER_LOOKUP_OUTPUT_FILE = 'provider.json';
@@ -222,7 +257,8 @@ export function buildChatPrompt({
   messages,
   currentHtml = null,
   providers = [],
-  refreshTtlMs
+  refreshTtlMs,
+  refreshMode
 }: BuildChatPromptOptions): string {
   void refreshTtlMs;
   const userMessages = messages.filter((m) => m.role === 'user');
@@ -239,10 +275,10 @@ export function buildChatPrompt({
         ''
       ].join('\n')
     : '';
-
   return [
     CODEX_SYSTEM_PROMPT,
     providersBlock(providers),
+    runtimeContextBlock(refreshMode),
     'Conversation history:',
     history || '(none)',
     '',

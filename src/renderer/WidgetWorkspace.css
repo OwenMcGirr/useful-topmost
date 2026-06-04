@@ -117,6 +117,13 @@
   background: #21262d;
 }
 
+.widget-message-assistant {
+  align-self: stretch;
+  border: 1px solid #30363d;
+  background: #161b22;
+  color: #e6edf3;
+}
+
 .widget-workspace-error {
   align-self: stretch;
   padding: 10px 12px;
@@ -267,6 +274,13 @@
 .widget-workspace-composer {
   padding-top: 10px;
   border-top: 1px solid #21262d;
+}
+
+.widget-workspace-suggested-questions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 
 .widget-workspace-composer-footer {
