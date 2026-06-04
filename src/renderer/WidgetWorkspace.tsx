@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { WidgetChatMessage, WidgetRefreshMode, WidgetWebhookInfo } from '../preload';
 import type { PublicProvider } from '../main/secrets-store';
 import { categorizeError, stripFailedPrefix } from './errors';
+import './WidgetWorkspace.css';
 
 interface WidgetWebhookSummary {
   enabled: boolean;
@@ -9,7 +10,7 @@ interface WidgetWebhookSummary {
   lastReceivedAt?: string;
 }
 
-interface WidgetChatPanelProps {
+interface WidgetWorkspaceProps {
   open: boolean;
   mode: 'create' | 'edit';
   widget?: {
@@ -48,74 +49,6 @@ export const REFRESH_CHOICES: readonly RefreshChoice[] = [
 ];
 
 const DEFAULT_REFRESH_TTL_MS = 3_600_000;
-
-const SCRIM: React.CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  background: 'rgba(0, 0, 0, 0.3)',
-  backdropFilter: 'blur(8px)',
-  WebkitBackdropFilter: 'blur(8px)',
-  zIndex: 79,
-  pointerEvents: 'none'
-};
-
-const PANEL: React.CSSProperties = {
-  position: 'fixed',
-  top: 0,
-  right: 0,
-  bottom: 0,
-  width: 440,
-  maxWidth: '100vw',
-  background: '#161b22',
-  color: '#e6edf3',
-  borderLeft: '1px solid #30363d',
-  zIndex: 80,
-  display: 'flex',
-  flexDirection: 'column',
-  boxShadow: '-16px 0 32px rgba(0,0,0,0.28)'
-};
-
-const HEADER: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  padding: '14px 16px',
-  borderBottom: '1px solid #21262d'
-};
-
-const PREVIEW: React.CSSProperties = {
-  width: 400,
-  height: 300,
-  margin: '16px auto 0',
-  background: '#0d1117',
-  border: '1px solid #30363d',
-  borderRadius: 6,
-  overflow: 'hidden',
-  display: 'grid',
-  placeItems: 'center',
-  color: '#8b949e',
-  fontSize: 13
-};
-
-const TRANSCRIPT: React.CSSProperties = {
-  flex: 1,
-  overflowY: 'auto',
-  padding: 16,
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 10
-};
-
-const PROVIDERS_BOX: React.CSSProperties = {
-  padding: '10px 16px',
-  borderTop: '1px solid #21262d',
-  background: '#0d1117'
-};
-
-const COMPOSER: React.CSSProperties = {
-  padding: 16,
-  borderTop: '1px solid #21262d'
-};
 
 const TEXTAREA: React.CSSProperties = {
   width: '100%',
@@ -190,7 +123,7 @@ function isNearBottom(el: HTMLElement): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= 48;
 }
 
-export default function WidgetChatPanel({
+export default function WidgetWorkspace({
   open,
   mode,
   widget,
@@ -202,7 +135,7 @@ export default function WidgetChatPanel({
   onDeleted,
   onAddProviderRequest,
   onRefreshChanged
-}: WidgetChatPanelProps) {
+}: WidgetWorkspaceProps) {
   const [value, setValue] = useState(initialMessage);
   const [messages, setMessages] = useState<WidgetChatMessage[]>([]);
   const [currentUuid, setCurrentUuid] = useState<string | null>(widget?.uuid ?? null);
@@ -218,6 +151,9 @@ export default function WidgetChatPanel({
   const [refreshDirty, setRefreshDirty] = useState<boolean>(false);
   const [webhookInfo, setWebhookInfo] = useState<WidgetWebhookInfo | null>(null);
   const [webhookTestStatus, setWebhookTestStatus] = useState<string | null>(null);
+  const [refreshOpen, setRefreshOpen] = useState(false);
+  const [webhookOpen, setWebhookOpen] = useState(false);
+  const [providersOpen, setProvidersOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
@@ -265,9 +201,7 @@ export default function WidgetChatPanel({
     setBuilding(false);
     setPlanSuggestions([]);
     if (!isCreatedWidgetTransition) setAutoCloseSeconds(null);
-    if (widget?.uuid) {
-      void loadChat(widget.uuid);
-    }
+    if (widget?.uuid) void loadChat(widget.uuid);
   }, [open, initialMessage, widget?.uuid, widget?.htmlUrl]);
 
   useEffect(() => {
@@ -280,7 +214,6 @@ export default function WidgetChatPanel({
     void (async () => {
       const list = await window.api.secrets.list();
       setProviders(list);
-      // Edit mode: seed from widget. Create mode: default to all checked.
       const existing = widget?.selectedProviderIds;
       if (existing !== undefined) {
         setSelectedIds(new Set(existing.filter((id) => list.some((p) => p.id === id))));
@@ -292,8 +225,6 @@ export default function WidgetChatPanel({
 
   useEffect(() => {
     if (!open) return;
-    // Seed the refresh dropdown. Existing widgets without a stored value see
-    // the default but we don't persist that until the user actively changes it.
     const nextMode = widget?.refreshMode ?? (widget?.refreshTtlMs === 0 ? 'live' : 'timed');
     setRefreshMode(nextMode);
     if (widget?.refreshTtlMs !== undefined) {
@@ -305,6 +236,7 @@ export default function WidgetChatPanel({
     }
     setWebhookInfo(null);
     setWebhookTestStatus(null);
+    setWebhookOpen(false);
     if (widget?.uuid && nextMode === 'event') {
       void window.api.getWidgetWebhook(widget.uuid).then((info) => {
         if ('ok' in info && info.ok === false) return;
@@ -336,12 +268,11 @@ export default function WidgetChatPanel({
         setAutoCloseSeconds(null);
       }
     });
-    const offPlan = window.api.onWidgetPlan(async (uuid, providers) => {
+    const offPlan = window.api.onWidgetPlan(async (uuid, nextProviders) => {
       if (uuid !== currentUuid) return;
       const saved = await window.api.secrets.list();
       const savedHosts = new Set(saved.flatMap((p) => p.hostnames));
-      const missing = providers.filter((entry) => entry.hostname && !savedHosts.has(entry.hostname));
-      // Deduplicate by hostname to avoid stacking identical banners.
+      const missing = nextProviders.filter((entry) => entry.hostname && !savedHosts.has(entry.hostname));
       const seen = new Set<string>();
       const unique: typeof missing = [];
       for (const m of missing) {
@@ -427,9 +358,9 @@ export default function WidgetChatPanel({
     });
   };
 
-  const handleRefreshChange = async (value: string) => {
+  const handleRefreshChange = async (nextValue: string) => {
     setRefreshDirty(true);
-    if (value === 'event') {
+    if (nextValue === 'event') {
       setRefreshMode('event');
       if (currentUuid) {
         const result = await window.api.setWidgetRefreshMode(currentUuid, 'event');
@@ -438,6 +369,7 @@ export default function WidgetChatPanel({
           if (!('ok' in info && info.ok === false)) {
             setWebhookInfo(info);
             setWebhookTestStatus(null);
+            setWebhookOpen(true);
             onRefreshChanged?.(currentUuid, refreshTtlMs, 'event', webhookSummary(info));
           }
         }
@@ -446,7 +378,8 @@ export default function WidgetChatPanel({
     }
     setWebhookInfo(null);
     setWebhookTestStatus(null);
-    if (value === '0') {
+    setWebhookOpen(false);
+    if (nextValue === '0') {
       setRefreshMode('live');
       setRefreshTtlMs(0);
       if (currentUuid) {
@@ -455,7 +388,7 @@ export default function WidgetChatPanel({
       }
       return;
     }
-    const next = Number(value);
+    const next = Number(nextValue);
     setRefreshMode('timed');
     setRefreshTtlMs(next);
     if (currentUuid) {
@@ -517,6 +450,7 @@ export default function WidgetChatPanel({
               createdWebhook = info;
               setWebhookInfo(info);
               setWebhookTestStatus(null);
+              setWebhookOpen(true);
             }
           }
         }
@@ -545,332 +479,215 @@ export default function WidgetChatPanel({
     }
   };
 
-  return (
-    <>
-      <div data-chat-scrim style={SCRIM} aria-hidden />
-      <aside
-        aria-label="Widget chat"
-        style={PANEL}
-        onPointerDown={cancelAutoClose}
-        onKeyDown={cancelAutoClose}
-      >
-      <div style={HEADER}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>{title}</h2>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {currentUuid && (
+  const renderMessages = () => {
+    if (displayMessages.length === 0) {
+      return <div style={{ color: '#8b949e', fontSize: 13 }}>Describe what this widget should show.</div>;
+    }
+    return displayMessages.map((m) => {
+      if (m.status === 'failed') {
+        const stripped = stripFailedPrefix(m.text);
+        const friendly = categorizeError(stripped);
+        const expanded = expandedFailures.has(m.id);
+        return (
+          <div key={m.id} role="alert" className="widget-workspace-error">
+            <div style={{ color: '#f85149', fontWeight: 600 }}>{friendly.title}</div>
+            {friendly.advice && <div style={{ opacity: 0.85 }}>{friendly.advice}</div>}
             <button
-              style={confirmingDelete ? { ...BTN, color: '#f85149', borderColor: '#f85149' } : BTN}
-              onClick={() => void handleDelete()}
-            >
-              {confirmingDelete ? 'Click to confirm' : 'Delete widget'}
-            </button>
-          )}
-          <button style={BTN} onClick={onClose}>Close</button>
-        </div>
-      </div>
-
-      <div style={PREVIEW}>
-        {previewUrl && !building ? (
-          <webview
-            src={previewUrl}
-            preload={widgetPreloadUrl}
-            webpreferences="contextIsolation=yes, nodeIntegration=no"
-            style={{ width: '100%', height: '100%', border: 0 }}
-          />
-        ) : (
-          <div>{building ? 'Building preview…' : 'Preview will appear here'}</div>
-        )}
-      </div>
-
-      <div
-        ref={transcriptRef}
-        style={TRANSCRIPT}
-        aria-label="Chat transcript"
-        onScroll={handleTranscriptScroll}
-      >
-        {displayMessages.length === 0 ? (
-          <div style={{ color: '#8b949e', fontSize: 13 }}>Describe what this widget should show.</div>
-        ) : (
-          displayMessages.map((m) => {
-            if (m.status === 'failed') {
-              const stripped = stripFailedPrefix(m.text);
-              const friendly = categorizeError(stripped);
-              const expanded = expandedFailures.has(m.id);
-              return (
-                <div
-                  key={m.id}
-                  role="alert"
-                  style={{
-                    alignSelf: 'stretch',
-                    padding: '10px 12px',
-                    borderLeft: '3px solid #f85149',
-                    borderRadius: 6,
-                    background: 'rgba(248, 81, 73, 0.08)',
-                    color: '#e6edf3',
-                    fontSize: 13,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 6
-                  }}
-                >
-                  <div style={{ color: '#f85149', fontWeight: 600 }}>{friendly.title}</div>
-                  {friendly.advice && <div style={{ opacity: 0.85 }}>{friendly.advice}</div>}
-                  <button
-                    style={{
-                      alignSelf: 'flex-start',
-                      background: 'transparent',
-                      color: '#e6edf3',
-                      border: '1px solid #30363d',
-                      borderRadius: 4,
-                      padding: '3px 8px',
-                      fontSize: 11,
-                      cursor: 'pointer'
-                    }}
-                    aria-expanded={expanded}
-                    onClick={() => {
-                      setExpandedFailures((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(m.id)) next.delete(m.id);
-                        else next.add(m.id);
-                        return next;
-                      });
-                    }}
-                  >
-                    {expanded ? 'Hide details' : 'See details'}
-                  </button>
-                  {expanded && (
-                    <pre
-                      style={{
-                        margin: 0,
-                        padding: 8,
-                        background: '#0d1117',
-                        border: '1px solid #30363d',
-                        borderRadius: 4,
-                        fontSize: 12,
-                        whiteSpace: 'pre-wrap',
-                        maxHeight: 160,
-                        overflowY: 'auto'
-                      }}
-                    >
-                      {stripped}
-                    </pre>
-                  )}
-                </div>
-              );
-            }
-            return (
-              <div
-                key={m.id}
-                style={{
-                  alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-                  maxWidth: '86%',
-                  padding: '8px 10px',
-                  borderRadius: 6,
-                  background: m.role === 'user' ? '#1f6feb' : '#21262d',
-                  color: '#e6edf3',
-                  fontSize: 13,
-                  whiteSpace: 'pre-wrap'
-                }}
-              >
-                {m.text}
-              </div>
-            );
-          })
-        )}
-        <div ref={transcriptEndRef} aria-hidden />
-      </div>
-
-      <div style={PROVIDERS_BOX}>
-        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 12, color: '#8b949e' }}>
-          <span>Refresh{refreshDirty || mode === 'create' ? '' : ' (default)'}</span>
-          <select
-            aria-label="Refresh cadence"
-            value={selectedChoiceValue(refreshMode, refreshTtlMs)}
-            onChange={(e) => void handleRefreshChange(e.target.value)}
-            style={{
-              background: '#0d1117',
-              color: '#e6edf3',
-              border: '1px solid #30363d',
-              borderRadius: 6,
-              padding: '4px 8px',
-              fontSize: 12
-            }}
-          >
-            {REFRESH_CHOICES.map((p) => (
-              <option key={choiceValue(p)} value={choiceValue(p)}>{p.label}</option>
-            ))}
-          </select>
-        </label>
-        {refreshMode === 'event' && webhookInfo && (() => {
-          const localUrl = webhookInfo.localUrlCandidates[0] ?? webhookInfo.urlCandidates.find((url) => url.startsWith('http://')) ?? webhookInfo.path;
-          const publicUrl = webhookInfo.publicUrl;
-          const row = (label: string, url: string, copyLabel: string) => (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ flex: '0 0 112px' }}>{label}</span>
-              <input
-                readOnly
-                value={url}
-                aria-label={label}
-                style={{
-                  minWidth: 0,
-                  flex: 1,
-                  background: '#0d1117',
-                  color: '#e6edf3',
-                  border: '1px solid #30363d',
-                  borderRadius: 6,
-                  padding: '4px 6px',
-                  fontSize: 11
-                }}
-              />
-              <button
-                style={{ ...BTN, fontSize: 11, padding: '4px 8px', whiteSpace: 'nowrap' }}
-                onClick={() => void navigator.clipboard?.writeText(url)}
-              >
-                {copyLabel}
-              </button>
-            </div>
-          );
-          return (
-            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 7, fontSize: 12, color: '#8b949e' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <strong style={{ color: '#e6edf3', fontWeight: 600 }}>Webhook setup</strong>
-                <span
-                  style={{
-                    border: `1px solid ${publicUrl ? '#2ea043' : '#d29922'}`,
-                    color: publicUrl ? '#7ee787' : '#f2cc60',
-                    borderRadius: 999,
-                    padding: '1px 7px',
-                    fontSize: 11
-                  }}
-                >
-                  {publicUrl ? 'Public' : 'Local only'}
-                </span>
-              </div>
-              <div>
-                {publicUrl
-                  ? 'External services can send events to the public webhook URL.'
-                  : 'This URL works on your local network. External services need a public URL.'}
-              </div>
-              {publicUrl && row('Public webhook URL', publicUrl, 'Copy public URL')}
-              {row('Local webhook URL', localUrl, 'Copy local URL')}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <button
-                  style={{ ...BTN, fontSize: 11, padding: '4px 8px' }}
-                  onClick={() => void testWebhook()}
-                >
-                  Test local webhook
-                </button>
-                {webhookTestStatus && (
-                  <span role={webhookTestStatus.endsWith('.') ? undefined : 'status'}>{webhookTestStatus}</span>
-                )}
-              </div>
-              {webhookInfo.lastReceivedAt && (
-                <div>Last event: {new Date(webhookInfo.lastReceivedAt).toLocaleString()}</div>
-              )}
-            </div>
-          );
-        })()}
-      </div>
-
-      <div style={PROVIDERS_BOX} aria-label="Provider selection">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <span style={{ fontSize: 12, color: '#8b949e' }}>
-            Providers this widget may use ({selectedIds.size}/{providers.length})
-          </span>
-          {providers.length > 0 && (
-            <div style={{ display: 'flex', gap: 4 }}>
-              <button style={{ ...BTN, fontSize: 11, padding: '3px 8px' }} onClick={selectAll}>All</button>
-              <button style={{ ...BTN, fontSize: 11, padding: '3px 8px' }} onClick={selectNone}>None</button>
-            </div>
-          )}
-        </div>
-        {providers.length === 0 ? (
-          <div style={{ fontSize: 12, color: '#8b949e' }}>
-            No providers configured. Add one in Settings to allow this widget to use authenticated APIs.
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 120, overflowY: 'auto' }}>
-            {providers.map((p) => (
-              <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={selectedIds.has(p.id)}
-                  onChange={() => toggleProvider(p.id)}
-                  aria-label={`Allow ${p.name}`}
-                />
-                <span>{p.name}</span>
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {planSuggestions.length > 0 && (
-        <div style={{ padding: '8px 16px', borderTop: '1px solid #21262d', display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {planSuggestions.map((entry) => (
-            <div
-              key={entry.hostname}
-              role="status"
-              style={{
-                padding: '8px 10px',
-                borderLeft: '3px solid #d29922',
-                borderRadius: 6,
-                background: 'rgba(210, 153, 34, 0.08)',
-                color: '#e6edf3',
-                fontSize: 12,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 8
+              style={{ ...BTN, alignSelf: 'flex-start', padding: '3px 8px', fontSize: 11 }}
+              aria-expanded={expanded}
+              onClick={() => {
+                setExpandedFailures((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(m.id)) next.delete(m.id);
+                  else next.add(m.id);
+                  return next;
+                });
               }}
             >
-              <span>This widget will use {entry.name}.</span>
-              <button
-                style={{
-                  background: 'transparent',
-                  color: '#e6edf3',
-                  border: '1px solid #30363d',
-                  borderRadius: 4,
-                  padding: '3px 8px',
-                  fontSize: 11,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap'
-                }}
-                onClick={() => onAddProviderRequest?.(entry.name)}
-              >
-                Add provider
-              </button>
-            </div>
-          ))}
+              {expanded ? 'Hide details' : 'See details'}
+            </button>
+            {expanded && <pre className="widget-workspace-error-details">{stripped}</pre>}
+          </div>
+        );
+      }
+      return (
+        <div key={m.id} className={m.role === 'user' ? 'widget-message widget-message-user' : 'widget-message widget-message-status'}>
+          {m.text}
         </div>
-      )}
+      );
+    });
+  };
 
-      <div style={COMPOSER}>
-        <textarea
-          ref={textareaRef}
-          aria-label="Widget message"
-          style={TEXTAREA}
-          value={value}
-          placeholder="Ask for a widget or describe the next change…"
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && e.ctrlKey) {
-              e.preventDefault();
-              void send();
-            }
-            if (e.key === 'Escape') onClose();
-          }}
-        />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-          <span style={{ fontSize: 11, color: '#8b949e' }}>
-            {autoCloseSeconds === null ? 'Ctrl+Enter to send' : `Closing in ${autoCloseSeconds}s`}
-          </span>
-          <button style={canSend ? BTN_PRIMARY : { ...BTN_PRIMARY, opacity: 0.5, cursor: 'not-allowed' }} disabled={!canSend} onClick={() => void send()}>
-            Send
-          </button>
-        </div>
+  const renderWebhookSetup = () => {
+    if (refreshMode !== 'event' || !webhookInfo) return null;
+    const localUrl = webhookInfo.localUrlCandidates[0] ?? webhookInfo.urlCandidates.find((url) => url.startsWith('http://')) ?? webhookInfo.path;
+    const publicUrl = webhookInfo.publicUrl;
+    const row = (label: string, url: string, copyLabel: string) => (
+      <div className="widget-workspace-url-row">
+        <span>{label}</span>
+        <input readOnly value={url} aria-label={label} className="widget-workspace-url-input" />
+        <button style={{ ...BTN, fontSize: 11, padding: '4px 8px', whiteSpace: 'nowrap' }} onClick={() => void navigator.clipboard?.writeText(url)}>
+          {copyLabel}
+        </button>
       </div>
-    </aside>
+    );
+    return (
+      <details className="widget-workspace-section" open={webhookOpen} onToggle={(e) => setWebhookOpen(e.currentTarget.open)}>
+        <summary className="widget-workspace-section-summary">Webhook setup</summary>
+        <div className="widget-workspace-section-body">
+          <div className="widget-workspace-webhook">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <strong style={{ color: '#e6edf3', fontWeight: 600 }}>Status</strong>
+              <span className={publicUrl ? 'widget-workspace-pill widget-workspace-pill-public' : 'widget-workspace-pill widget-workspace-pill-local'}>
+                {publicUrl ? 'Public' : 'Local only'}
+              </span>
+            </div>
+            <div>
+              {publicUrl
+                ? 'External services can send events to the public webhook URL.'
+                : 'This URL works on your local network. External services need a public URL.'}
+            </div>
+            {publicUrl && row('Public webhook URL', publicUrl, 'Copy public URL')}
+            {row('Local webhook URL', localUrl, 'Copy local URL')}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <button style={{ ...BTN, fontSize: 11, padding: '4px 8px' }} onClick={() => void testWebhook()}>
+                Test local webhook
+              </button>
+              {webhookTestStatus && <span role={webhookTestStatus.endsWith('.') ? undefined : 'status'}>{webhookTestStatus}</span>}
+            </div>
+            {webhookInfo.lastReceivedAt && <div>Last event: {new Date(webhookInfo.lastReceivedAt).toLocaleString()}</div>}
+          </div>
+        </div>
+      </details>
+    );
+  };
+
+  return (
+    <>
+      <div data-chat-scrim className="widget-workspace-scrim" aria-hidden />
+      <section aria-label="Widget workspace" className="widget-workspace" onPointerDown={cancelAutoClose} onKeyDown={cancelAutoClose}>
+        <header className="widget-workspace-header">
+          <div className="widget-workspace-title-row">
+            <h2 style={{ margin: 0, fontSize: 18 }}>{title}</h2>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {currentUuid && (
+              <button style={confirmingDelete ? { ...BTN, color: '#f85149', borderColor: '#f85149' } : BTN} onClick={() => void handleDelete()}>
+                {confirmingDelete ? 'Click to confirm' : 'Delete widget'}
+              </button>
+            )}
+            <button style={BTN} onClick={onClose}>Close</button>
+          </div>
+        </header>
+
+        <div className="widget-workspace-body">
+          <section className="widget-workspace-preview-pane" aria-label="Preview pane">
+            <h3 className="widget-workspace-pane-title">Preview</h3>
+            <div className="widget-workspace-preview-shell">
+              {previewUrl && !building ? (
+                <webview src={previewUrl} preload={widgetPreloadUrl} webpreferences="contextIsolation=yes, nodeIntegration=no" style={{ width: '100%', height: '100%', border: 0 }} />
+              ) : (
+                <div>{building ? 'Building preview…' : 'Preview will appear here'}</div>
+              )}
+            </div>
+          </section>
+
+          <section className="widget-workspace-chat-pane" aria-label="Chat pane">
+            <div ref={transcriptRef} className="widget-workspace-transcript" aria-label="Chat transcript" onScroll={handleTranscriptScroll}>
+              {renderMessages()}
+              <div ref={transcriptEndRef} aria-hidden />
+            </div>
+
+            <div className="widget-workspace-advanced" aria-label="Advanced widget options">
+              <details className="widget-workspace-section" open={refreshOpen} onToggle={(e) => setRefreshOpen(e.currentTarget.open)}>
+                <summary className="widget-workspace-section-summary">Refresh</summary>
+                <div className="widget-workspace-section-body">
+                  <label className="widget-workspace-refresh-row">
+                    <span>Refresh{refreshDirty || mode === 'create' ? '' : ' (default)'}</span>
+                    <select
+                      aria-label="Refresh cadence"
+                      value={selectedChoiceValue(refreshMode, refreshTtlMs)}
+                      onChange={(e) => void handleRefreshChange(e.target.value)}
+                      className="widget-workspace-select"
+                    >
+                      {REFRESH_CHOICES.map((p) => <option key={choiceValue(p)} value={choiceValue(p)}>{p.label}</option>)}
+                    </select>
+                  </label>
+                </div>
+              </details>
+
+              {renderWebhookSetup()}
+
+              <details className="widget-workspace-section" open={providersOpen} onToggle={(e) => setProvidersOpen(e.currentTarget.open)}>
+                <summary className="widget-workspace-section-summary">Providers</summary>
+                <div className="widget-workspace-section-body" aria-label="Provider selection">
+                  <div className="widget-workspace-provider-header">
+                    <span>Providers this widget may use ({selectedIds.size}/{providers.length})</span>
+                    {providers.length > 0 && (
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button style={{ ...BTN, fontSize: 11, padding: '3px 8px' }} onClick={selectAll}>All</button>
+                        <button style={{ ...BTN, fontSize: 11, padding: '3px 8px' }} onClick={selectNone}>None</button>
+                      </div>
+                    )}
+                  </div>
+                  {providers.length === 0 ? (
+                    <div style={{ fontSize: 12, color: '#8b949e' }}>No providers configured. Add one in Settings to allow this widget to use authenticated APIs.</div>
+                  ) : (
+                    <div className="widget-workspace-provider-list">
+                      {providers.map((p) => (
+                        <label key={p.id} className="widget-workspace-provider-row">
+                          <input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleProvider(p.id)} aria-label={`Allow ${p.name}`} />
+                          <span>{p.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </details>
+
+              {planSuggestions.length > 0 && (
+                <details className="widget-workspace-section" open>
+                  <summary className="widget-workspace-section-summary">Provider suggestions</summary>
+                  <div className="widget-workspace-section-body widget-workspace-suggestions">
+                    {planSuggestions.map((entry) => (
+                      <div key={entry.hostname} role="status" className="widget-workspace-suggestion">
+                        <span>This widget will use {entry.name}.</span>
+                        <button style={{ ...BTN, fontSize: 11, padding: '3px 8px', whiteSpace: 'nowrap' }} onClick={() => onAddProviderRequest?.(entry.name)}>
+                          Add provider
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+            </div>
+
+            <div className="widget-workspace-composer">
+              <textarea
+                ref={textareaRef}
+                aria-label="Widget message"
+                style={TEXTAREA}
+                value={value}
+                placeholder="Ask for a widget or describe the next change…"
+                onChange={(e) => setValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && e.ctrlKey) {
+                    e.preventDefault();
+                    void send();
+                  }
+                  if (e.key === 'Escape') onClose();
+                }}
+              />
+              <div className="widget-workspace-composer-footer">
+                <span>{autoCloseSeconds === null ? 'Ctrl+Enter to send' : `Closing in ${autoCloseSeconds}s`}</span>
+                <button style={canSend ? BTN_PRIMARY : { ...BTN_PRIMARY, opacity: 0.5, cursor: 'not-allowed' }} disabled={!canSend} onClick={() => void send()}>
+                  Send
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
     </>
   );
 }

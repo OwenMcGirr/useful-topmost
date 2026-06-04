@@ -4,7 +4,7 @@ import Tile from './Tile';
 import SettingsModal from './SettingsModal';
 import UpdatePrompt from './UpdatePrompt';
 import WelcomeOverlay from './WelcomeOverlay';
-import WidgetChatPanel from './WidgetChatPanel';
+import WidgetWorkspace from './WidgetWorkspace';
 import type { Widget, TileState } from './types';
 import type { UpdateState, WidgetRefreshMode } from '../preload';
 import {
@@ -599,7 +599,7 @@ export default function Dashboard() {
           <button aria-label="New widget" title="New widget" style={DOCK_PRIMARY_BUTTON} onClick={() => setChat({ open: true, mode: 'create' })}>+</button>
         </div>
       </div>
-      <WidgetChatPanel
+      <WidgetWorkspace
         open={chat.open}
         mode={chat.open ? chat.mode : 'create'}
         widget={chat.open && chat.mode === 'edit' ? chat.widget : undefined}
