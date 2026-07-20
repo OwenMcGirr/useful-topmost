@@ -164,7 +164,7 @@ Repository after a stable GitHub Release is published. Generate the
 manifest files from the release installer:
 
 ```powershell
-npm run winget:manifest -- -Version 2026.1.0
+npm run winget:manifest -- -Version 2026.1.0 -ReleaseDate 2026-06-03
 winget validate winget-manifests\manifests\o\OwenMcGirr\UsefulTopmost\2026.1.0
 ```
 
@@ -176,7 +176,9 @@ https://github.com/OwenMcGirr/useful-topmost/releases/download/v2026.1.0/useful-
 
 Submit the generated manifest folder to `microsoft/winget-pkgs` under
 `manifests\o\OwenMcGirr\UsefulTopmost\<version>\` after validating the
-installer supports silent install and clean uninstall.
+installer supports silent install and clean uninstall. The manifest declares
+`OpenAI.Codex` as a package dependency, so WinGet installs the Codex CLI
+automatically. Users must still authenticate it by running `codex login`.
 
 ## Known limits
 
