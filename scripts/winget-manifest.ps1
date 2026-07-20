@@ -6,7 +6,10 @@ param(
 
   [string]$InstallerPath,
 
-  [string]$OutputRoot = "winget-manifests"
+  [string]$OutputRoot = "winget-manifests",
+
+  [ValidatePattern('^\d{4}-\d{2}-\d{2}$')]
+  [string]$ReleaseDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd")
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,6 +58,7 @@ $manifestDir = Join-Path $OutputRoot "manifests\o\OwenMcGirr\UsefulTopmost\$Vers
 New-Item -ItemType Directory -Path $manifestDir -Force | Out-Null
 
 $versionManifest = @"
+# yaml-language-server: `$schema=https://aka.ms/winget-manifest.version.$ManifestVersion.schema.json
 # Created with scripts/winget-manifest.ps1
 PackageIdentifier: $PackageIdentifier
 PackageVersion: $Version
@@ -64,6 +68,7 @@ ManifestVersion: $ManifestVersion
 "@
 
 $localeManifest = @"
+# yaml-language-server: `$schema=https://aka.ms/winget-manifest.defaultLocale.$ManifestVersion.schema.json
 # Created with scripts/winget-manifest.ps1
 PackageIdentifier: $PackageIdentifier
 PackageVersion: $Version
@@ -89,6 +94,7 @@ ManifestVersion: $ManifestVersion
 "@
 
 $installerManifest = @"
+# yaml-language-server: `$schema=https://aka.ms/winget-manifest.installer.$ManifestVersion.schema.json
 # Created with scripts/winget-manifest.ps1
 PackageIdentifier: $PackageIdentifier
 PackageVersion: $Version
@@ -98,11 +104,14 @@ InstallModes:
 - silent
 - silentWithProgress
 UpgradeBehavior: install
-ReleaseDate: $((Get-Date).ToUniversalTime().ToString("yyyy-MM-dd"))
+ReleaseDate: $ReleaseDate
 Installers:
 - Architecture: x64
   InstallerUrl: $InstallerUrl
   InstallerSha256: $installerSha256
+  Dependencies:
+    PackageDependencies:
+    - PackageIdentifier: OpenAI.Codex
 ManifestType: installer
 ManifestVersion: $ManifestVersion
 "@

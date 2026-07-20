@@ -44,7 +44,7 @@ gh api repos/:owner/:repo/milestones/<number> --method PATCH -f state=closed
 Submit WinGet only for stable releases, not prerelease tags. After the GitHub Release has published the Windows installer, generate the WinGet manifests:
 
 ```powershell
-npm run winget:manifest -- -Version 2026.1.0
+npm run winget:manifest -- -Version 2026.1.0 -ReleaseDate 2026-06-03
 winget validate winget-manifests\manifests\o\OwenMcGirr\UsefulTopmost\2026.1.0
 ```
 
